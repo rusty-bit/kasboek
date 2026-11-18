@@ -1,6 +1,11 @@
 """Kasboek web app: FastAPI + Jinja2 + HTMX. Run locally: DATA_DIR=./data uvicorn app.main:app --reload"""
+import asyncio
 import logging
+import os
+import secrets
+import time
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -8,7 +13,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app import db, llm, store
+from app import db, enablebanking, llm, store
 from app.fmt import eur
 from app.importers import parse_statement
 
@@ -32,8 +37,39 @@ templates.env.globals["field_label"] = lambda f: FIELD_LABELS.get(f, f)
 @asynccontextmanager
 async def lifespan(app):
     db.init()
+    with db.db() as con:
+        store.relearn(con)
     log.info("Database ready at %s", db.db_path())
+    task = None
+    if os.environ.get("KASBOEK_SCHEDULER", "1") != "0":
+        task = asyncio.create_task(_sync_loop())
     yield
+    if task:
+        task.cancel()
+
+
+SYNC_HOURS = float(os.environ.get("SYNC_HOURS", "6"))   # PSD2 allows 4 unattended fetches a day per account
+
+
+async def _sync_loop():
+    """Background bank sync every SYNC_HOURS. Errors are logged and stored on the session, never fatal."""
+    await asyncio.sleep(120)
+    while True:
+        try:
+            await asyncio.to_thread(_sync_job)
+        except Exception:
+            log.exception("Background sync failed")
+        await asyncio.sleep(SYNC_HOURS * 3600)
+
+
+def _sync_job():
+    if not eb_credentials()[0]:
+        return
+    with db.db() as con:
+        if not store.eb_sessions(con):
+            return
+        rep = store.sync_all(con, eb_client())
+    log.info("Background sync: %s new transactions", sum(r["added"] for r in rep))
 
 
 app = FastAPI(title="Kasboek", lifespan=lifespan)
@@ -308,3 +344,141 @@ def rule_delete(rule_id: int):
     with db.db() as con:
         store.delete_rule(con, rule_id)
     return RedirectResponse("/rules", status_code=303)
+
+
+# --- banks (Enable Banking) -----------------------------------------------------------------------
+BANK_COUNTRIES = ("NL", "DE")
+ASPSP_CACHE = {}          # country -> (fetched at, [aspsp])
+CONSENT_WARN_DAYS = 14
+
+
+def eb_credentials():
+    return enablebanking.load_credentials(db.data_dir())
+
+
+def eb_client():
+    return enablebanking.Client.from_data_dir(db.data_dir())
+
+
+def _aspsps(client):
+    out, err = [], None
+    for c in BANK_COUNTRIES:
+        hit = ASPSP_CACHE.get(c)
+        if not hit or time.time() - hit[0] > 86400:
+            try:
+                ASPSP_CACHE[c] = hit = (time.time(), client.aspsps(c))
+            except enablebanking.EBError as e:
+                err = str(e)
+                continue
+        out += hit[1]
+    return sorted(out, key=lambda a: (a.get("country"), a.get("name", "").lower())), err
+
+
+def _days_left(valid_until):
+    try:
+        return (date.fromisoformat(valid_until[:10]) - date.today()).days
+    except (TypeError, ValueError):
+        return None
+
+
+def _banks_page(request, status=200, **ctx):
+    app_id, key_path = eb_credentials()
+    aspsps, aspsp_error = [], None
+    if app_id:
+        try:
+            aspsps, aspsp_error = _aspsps(eb_client())
+        except enablebanking.EBError as e:
+            aspsp_error = str(e)
+    with db.db() as con:
+        sessions = store.eb_sessions(con)
+        for s in sessions:
+            s["days_left"] = _days_left(s["valid_until"])
+        return render(request, "banks.html", {
+            "page": "banks", "app_id": app_id, "aspsps": aspsps, "aspsp_error": aspsp_error,
+            "redirect_url": db.setting(con, "eb_redirect_url", ""), "sessions": sessions,
+            "linked": [a for a in store.accounts(con) if a["eb_uid"]], "warn_days": CONSENT_WARN_DAYS,
+            "sync_hours": SYNC_HOURS, **ctx}, status, con)
+
+
+@app.get("/banks")
+def banks_page(request: Request):
+    return _banks_page(request)
+
+
+@app.post("/banks/redirect")
+def banks_redirect(request: Request, redirect_url: str = Form("")):
+    url = redirect_url.strip()
+    if not url.startswith("https://"):
+        return _banks_page(request, 400, error="The redirect URL must start with https:// and match the one "
+                                               "registered for your app in the Enable Banking control panel.")
+    with db.db() as con:
+        db.set_setting(con, "eb_redirect_url", url)
+    return RedirectResponse("/banks", status_code=303)
+
+
+@app.post("/banks/connect")
+def banks_connect(request: Request, aspsp: str = Form(...)):
+    name, _, country = aspsp.rpartition("|")
+    with db.db() as con:
+        redirect_url = db.setting(con, "eb_redirect_url", "")
+    if not redirect_url:
+        return _banks_page(request, 400, error="Set the redirect URL first.")
+    max_secs = next((a.get("maximum_consent_validity") for a in ASPSP_CACHE.get(country, (0, []))[1]
+                     if a.get("name") == name), None) or 180 * 86400
+    valid_until = (datetime.now(timezone.utc) + timedelta(seconds=min(max_secs, 180 * 86400) - 3600)).isoformat()
+    state = secrets.token_urlsafe(16)
+    try:
+        url = eb_client().start_auth(name, country, redirect_url, state, valid_until)
+    except enablebanking.EBError as e:
+        return _banks_page(request, 400, error=str(e))
+    with db.db() as con:
+        db.set_setting(con, f"eb_state:{state}", f"{name}|{country}")
+    log.info("Starting bank login for %s (%s)", name, country)
+    return RedirectResponse(url, status_code=303)
+
+
+def _finish(request, code, state):
+    with db.db() as con:
+        pending = db.setting(con, f"eb_state:{state}") if state else None
+    if not pending:
+        return _banks_page(request, 400, error="That link doesn't match a connection started here. "
+                                               "Click Connect again and use the newest bank login.")
+    name, _, country = pending.rpartition("|")
+    try:
+        client = eb_client()
+        session = client.create_session(code)
+        with db.db() as con:
+            linked = store.link_session(con, session, name, country)
+            con.execute("DELETE FROM settings WHERE key=?", (f"eb_state:{state}",))
+        with db.db() as con:
+            report = store.sync_all(con, client)
+    except enablebanking.EBError as e:
+        return _banks_page(request, 400, error=str(e))
+    return _banks_page(request, connected={"bank": name, "linked": linked}, report=report)
+
+
+@app.get("/banks/callback")
+def banks_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    if error or not code:
+        return _banks_page(request, 400, error="The bank login was cancelled or refused. Try connecting again.")
+    return _finish(request, code, state)
+
+
+@app.post("/banks/finish")
+def banks_finish(request: Request, pasted_url: str = Form("")):
+    try:
+        code, state = enablebanking.code_from_url(pasted_url)
+    except enablebanking.EBError as e:
+        return _banks_page(request, 400, error=str(e))
+    return _finish(request, code, state)
+
+
+@app.post("/banks/sync")
+def banks_sync(request: Request):
+    try:
+        client = eb_client()
+    except enablebanking.EBError as e:
+        return _banks_page(request, 400, error=str(e))
+    with db.db() as con:
+        report = store.sync_all(con, client)
+    return _banks_page(request, report=report)

@@ -198,6 +198,9 @@ MIGRATIONS = [
     ("accounts", "ext_key", "TEXT"),
     ("transactions", "mcc", "TEXT"),                       # merchant category code (Enable Banking cards)
     ("transactions", "source", "TEXT NOT NULL DEFAULT 'file'"),  # file | enablebanking
+    ("transactions", "alt_key", "TEXT"),                   # dedupe key of the same booking from the other source
+    ("eb_sessions", "last_sync", "TEXT"),
+    ("eb_sessions", "last_error", "TEXT"),
 ]
 
 
@@ -207,6 +210,8 @@ def migrate(con):
         if col not in cols:
             con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS accounts_ext_key ON accounts(ext_key)")
+    con.execute("CREATE INDEX IF NOT EXISTS tx_alt_key ON transactions(alt_key)")
+    con.execute("CREATE INDEX IF NOT EXISTS tx_account_date ON transactions(account_id, date)")
 
 
 def init():

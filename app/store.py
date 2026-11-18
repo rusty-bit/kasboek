@@ -5,7 +5,7 @@ from collections import OrderedDict
 
 from app.categorize import (Rule, categorize_all, direction, memory_keys, merchant_text, norm_text,
                             normalize_merchant, rule_matches, suggest_rule_text)
-from app.importers import dedupe_keys, group_key
+from app.importers import crossmatch, dedupe_keys, group_key
 from app.transfers import infer_ibans
 
 log = logging.getLogger("kasboek.store")
@@ -67,22 +67,14 @@ def import_statement(con, st, account_id=None):
     report = []
     for key, rows in groups.items():
         acc = account_id if account_id is not None else _account_for_group(con, key, rows, st)
-        dedupe_keys(rows, acc)
-        added = 0
-        for r in rows:
-            cur = con.execute(
-                "INSERT OR IGNORE INTO transactions(account_id, date, amount, counterparty, counterparty_iban,"
-                " description, dedupe_key) VALUES (?,?,?,?,?,?,?)",
-                (acc, r["date"], r["amount"], r["counterparty"], r["counterparty_iban"], r["description"],
-                 r["dedupe_key"]))
-            added += cur.rowcount
+        added, matched = insert_rows(con, acc, rows, source="file")
         bal = st["balances"].get(key)
         if bal is not None:
-            con.execute("UPDATE accounts SET balance=?, balance_date=? WHERE id=?"
-                        " AND (balance_date IS NULL OR balance_date <= ?)", (bal[0], bal[1], acc, bal[1]))
+            _set_balance(con, acc, *bal)
         name = con.execute("SELECT name FROM accounts WHERE id=?", (acc,)).fetchone()["name"]
         report.append({
             "account_id": acc, "account_name": name, "added": added, "existing": len(rows) - added,
+            "matched": matched,
             "first": min(r["date"] for r in rows), "last": max(r["date"] for r in rows),
             "check": st.get("checks", {}).get(rows[0]["section"]) if rows[0]["section"] else None,
             "sample": sorted(rows, key=lambda r: r["date"], reverse=True)[:10],
@@ -93,6 +85,49 @@ def import_statement(con, st, account_id=None):
         g["iban_found"] = found.get(g["account_id"])
     recategorize(con)
     return report
+
+
+def _set_balance(con, acc, amount, when):
+    con.execute("UPDATE accounts SET balance=?, balance_date=? WHERE id=?"
+                " AND (balance_date IS NULL OR balance_date <= ?)", (amount, when, acc, when))
+
+
+def insert_rows(con, acc, rows, source):
+    """Insert rows into one account without duplicates. Returns (added, matched).
+    1. Same dedupe key (or a key an earlier match attached as alt_key): already there.
+    2. Otherwise a row from the *other* source (file vs Enable Banking) with the same amount within 2 days is
+       the same booking: it gets this row's key as alt_key (so the next run sees it at step 1) and, if it
+       had none, the bank's shop-type code. Counted as matched.
+    3. The rest is inserted."""
+    if not rows:
+        return 0, 0
+    dedupe_keys(rows, acc)
+    known = {r[0] for r in con.execute("SELECT dedupe_key FROM transactions WHERE account_id=? UNION "
+                                       "SELECT alt_key FROM transactions WHERE account_id=? AND alt_key IS NOT NULL",
+                                       (acc, acc))}
+    fresh = [r for r in rows if r["dedupe_key"] not in known]
+    matched = 0
+    if fresh:
+        lo, hi = min(r["date"] for r in fresh), max(r["date"] for r in fresh)
+        others = [dict(r) for r in con.execute(
+            "SELECT id, date, amount, counterparty_iban FROM transactions WHERE account_id=? AND source != ?"
+            " AND alt_key IS NULL AND date BETWEEN date(?, '-3 days') AND date(?, '+3 days')", (acc, source, lo, hi))]
+        pairs = crossmatch(fresh, others)
+        for i, other_id in pairs.items():
+            r = fresh[i]
+            con.execute("UPDATE transactions SET alt_key=?, mcc=COALESCE(mcc, ?) WHERE id=?",
+                        (r["dedupe_key"], r.get("mcc"), other_id))
+        matched = len(pairs)
+        fresh = [r for i, r in enumerate(fresh) if i not in pairs]
+    added = 0
+    for r in fresh:
+        cur = con.execute(
+            "INSERT OR IGNORE INTO transactions(account_id, date, amount, counterparty, counterparty_iban,"
+            " description, dedupe_key, mcc, source) VALUES (?,?,?,?,?,?,?,?,?)",
+            (acc, r["date"], r["amount"], r["counterparty"], r["counterparty_iban"], r["description"],
+             r["dedupe_key"], r.get("mcc"), source))
+        added += cur.rowcount
+    return added, matched
 
 
 def fill_ibans(con):
@@ -353,3 +388,111 @@ def coverage(con, month):
     total = sum(n for _, n in rows)
     auto = sum(n for s, n in rows if s not in QUEUE_SOURCES and s != "manual")
     return {"total": total, "auto": auto, "by_source": {s: n for s, n in rows}}
+
+
+# --- Enable Banking -------------------------------------------------------------------------------
+HISTORY_YEARS = 5      # first sync of an empty account asks the bank for as much as it gives, up to this
+OVERLAP_DAYS = 10      # later syncs re-read this many days before the newest row (late bookings, file overlap)
+
+
+def link_session(con, session, aspsp, country):
+    """Store an authorised session and attach its accounts: matched by IBAN, else created.
+    Returns [{account_id, name, iban, new}]."""
+    from app.enablebanking import session_accounts
+    sid = session["session_id"]
+    valid_until = (session.get("access") or {}).get("valid_until")
+    con.execute("INSERT INTO eb_sessions(session_id, aspsp, country, valid_until) VALUES (?,?,?,?)"
+                " ON CONFLICT(session_id) DO UPDATE SET valid_until=excluded.valid_until",
+                (sid, aspsp, country, valid_until))
+    bank = aspsp.lower()
+    out = []
+    for a in session_accounts(session):
+        row = con.execute("SELECT id, name FROM accounts WHERE iban=?", (a["iban"],)).fetchone() if a["iban"] else None
+        new = row is None
+        if new:
+            row = con.execute("SELECT id, name FROM accounts WHERE eb_uid=?", (a["uid"],)).fetchone()
+            new = row is None
+        if new:
+            name = a["name"] or f"{bank_label(bank) or aspsp} ··{(a['iban'] or a['uid'])[-4:]}"
+            acc = create_account(con, name, bank, iban=a["iban"] or None)
+        else:
+            acc = row["id"]
+        con.execute("UPDATE accounts SET eb_uid=?, eb_session=?, source='enablebanking' WHERE id=?",
+                    (a["uid"], sid, acc))
+        name = con.execute("SELECT name FROM accounts WHERE id=?", (acc,)).fetchone()["name"]
+        out.append({"account_id": acc, "name": name, "iban": a["iban"], "new": new})
+    log.info("Linked %s accounts from %s", len(out), aspsp)
+    return out
+
+
+def eb_sessions(con):
+    return [dict(r) for r in con.execute(
+        "SELECT s.*, (SELECT COUNT(*) FROM accounts a WHERE a.eb_session = s.session_id) AS accounts"
+        " FROM eb_sessions s ORDER BY s.valid_until DESC")]
+
+
+def _sync_from(con, acc, today):
+    from datetime import date, timedelta
+    newest = con.execute("SELECT MAX(date) FROM transactions WHERE account_id=?", (acc,)).fetchone()[0]
+    t = date.fromisoformat(today)
+    if newest:
+        return (date.fromisoformat(newest) - timedelta(days=OVERLAP_DAYS)).isoformat(), None
+    try:
+        start = t.replace(year=t.year - HISTORY_YEARS)
+    except ValueError:            # 29 February
+        start = t.replace(year=t.year - HISTORY_YEARS, day=28)
+    return start.isoformat(), "longest"
+
+
+def sync_all(con, client, today=None):
+    """Fetch new bookings and balances for every linked account. Errors are stored per session and returned,
+    never raised, so one bank failing doesn't stop the others.
+    Returns [{account_id, account_name, added, matched, error}]."""
+    from datetime import date
+    from app.enablebanking import EBError, map_transaction, pick_balance
+    today = today or date.today().isoformat()
+    report, errors = [], {}
+    sessions = {s["session_id"]: s for s in eb_sessions(con)}
+    for a in con.execute("SELECT id, name, eb_uid, eb_session FROM accounts WHERE eb_uid IS NOT NULL").fetchall():
+        s = sessions.get(a["eb_session"])
+        item = {"account_id": a["id"], "account_name": a["name"], "added": 0, "matched": 0, "error": None}
+        report.append(item)
+        if not s or (s["valid_until"] or "")[:10] < today:
+            item["error"] = "The bank connection has expired. Connect this bank again."
+            errors[a["eb_session"]] = item["error"]
+            continue
+        date_from, strategy = _sync_from(con, a["id"], today)
+        try:
+            rows = [r for r in (map_transaction(t) for t in client.transactions(a["eb_uid"], date_from, strategy))
+                    if r]
+            for r in rows:
+                if r["ref"]:
+                    r["ref"] = "eb:" + r["ref"]
+            item["added"], item["matched"] = insert_rows(con, a["id"], rows, source="enablebanking")
+            bal = pick_balance(client.balances(a["eb_uid"]), today=today)
+            if bal:
+                _set_balance(con, a["id"], *bal)
+        except EBError as e:
+            item["error"] = str(e)
+            errors[a["eb_session"]] = str(e)
+            continue
+        log.info("Synced %s: %s new, %s matched to file rows", a["name"], item["added"], item["matched"])
+    for sid in sessions:
+        con.execute("UPDATE eb_sessions SET last_sync=datetime('now'), last_error=? WHERE session_id=?",
+                    (errors.get(sid), sid))
+    if any(r["added"] or r["matched"] for r in report):   # matched rows may have gained a shop-type code
+        fill_ibans(con)
+        recategorize(con)
+    return report
+
+
+def relearn(con):
+    """Backfill memory from hand-set rows (e.g. IBAN memory for choices made before it existed). Never
+    overrides what is already remembered. Returns how many rows changed category."""
+    before = con.total_changes
+    for t in [dict(r) for r in con.execute(TX_COLS + " WHERE t.cat_source='manual'")]:
+        cid = _cat_id(con, t["category_key"])
+        for norm, d in memory_keys(t):
+            con.execute("INSERT OR IGNORE INTO merchant_memory(norm, direction, category_id) VALUES (?,?,?)",
+                        (norm, d, cid))
+    return recategorize(con) if con.total_changes != before else 0

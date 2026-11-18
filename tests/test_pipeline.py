@@ -190,3 +190,22 @@ def test_unsure_merchants_for_ai_are_grouped_and_private(con):
     [item] = store.unsure_for_llm(con)
     assert item["key"] == ("zaak x", "out") and item["count"] == 2
     assert "NL00" not in str(item)                     # no IBANs leave the app
+
+
+def test_relearn_backfills_iban_memory_from_hand_set_rows(con):
+    acc = store.create_account(con, name="Test", bank="")
+    csv = ("Datum;Bedrag;Naam;Tegenrekening\n"
+           "01-10-2026;-40,00;J. Smit;NL00INGB0000000007\n"
+           "08-10-2026;-40,00;Jolanda Smit;NL00INGB0000000007\n").encode()
+    imp(con, "s.csv", data=csv, account_id=acc)
+    t = tx_id(con, "J. Smit")
+    # a choice made before IBAN memory existed: only the name was remembered
+    con.execute("UPDATE transactions SET category_id=(SELECT id FROM categories WHERE key='kids'), cat_source='manual'"
+                " WHERE id=?", (t,))
+    con.execute("INSERT INTO merchant_memory(norm, direction, category_id) VALUES ('j smit','out',"
+                "(SELECT id FROM categories WHERE key='kids'))")
+    store.recategorize(con)
+    assert cat_of(con, "Jolanda")[1] == "default"
+    assert store.relearn(con) == 1
+    assert cat_of(con, "Jolanda") == ("kids", "iban")
+    assert store.relearn(con) == 0     # idempotent

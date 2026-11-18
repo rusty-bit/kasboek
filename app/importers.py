@@ -361,3 +361,31 @@ def dedupe_keys(rows, account_id):
         seen[base] = seen.get(base, 0) + 1
         r["dedupe_key"] = hashlib.sha1(f"{base}|{seen[base]}".encode()).hexdigest()
     return rows
+
+
+def crossmatch(new_rows, existing, days=2):
+    """Pair rows from another source (Enable Banking vs file) that are the same booking: same amount, dates at
+    most `days` apart (banks report booking vs value date differently). Each existing row pairs once; the same
+    counterparty IBAN wins, then the closest date. -> {index in new_rows: existing id}."""
+    from datetime import date as _date
+    d = lambda s: _date.fromisoformat(s[:10])
+    by_cents = {}
+    for e in existing:
+        by_cents.setdefault(round(e["amount"] * 100), []).append(e)
+    used, out = set(), {}
+    for i, r in sorted(enumerate(new_rows), key=lambda x: x[1]["date"]):
+        best = None
+        for e in by_cents.get(round(r["amount"] * 100), []):
+            if e["id"] in used:
+                continue
+            gap = abs((d(r["date"]) - d(e["date"])).days)
+            if gap > days:
+                continue
+            same_iban = bool(r.get("counterparty_iban")) and r.get("counterparty_iban") == e.get("counterparty_iban")
+            score = (0 if same_iban else 1, gap)
+            if best is None or score < best[0]:
+                best = (score, e["id"])
+        if best:
+            used.add(best[1])
+            out[i] = best[1]
+    return out

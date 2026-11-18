@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Banks · Kasboek{% endblock %}
+{% block content %}
+<h1>Bank connections</h1>
+{% if error %}<div class="error card">{{ error }}</div>{% endif %}
+
+{% if connected %}
+<div class="ok card">
+  <strong>Connected {{ connected.bank }}.</strong>
+  {% for a in connected.linked %}<div>{{ a.name }}{% if a.new %} <span class="muted">(new account)</span>{% else %} <span class="muted">(matched to your existing account)</span>{% endif %}</div>{% endfor %}
+</div>
+{% endif %}
+
+{% if report %}
+<div class="card">
+  <h2>Sync result</h2>
+  {% for r in report %}
+  <div class="{{ 'error' if r.error else 'ok' }}" style="margin-bottom:6px">
+    <strong>{{ r.account_name }}</strong>:
+    {% if r.error %}{{ r.error }}{% else %}{{ r.added }} new{% if r.matched %}, {{ r.matched }} already there from your file imports{% endif %}{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% for s in sessions if s.days_left is not none and s.days_left <= warn_days %}
+<div class="notice card">
+  {% if s.days_left < 0 %}The {{ s.aspsp }} connection has expired.{% else %}The {{ s.aspsp }} connection runs out in
+  {{ s.days_left }} {{ 'day' if s.days_left == 1 else 'days' }}.{% endif %} Connect {{ s.aspsp }} again below to
+  keep syncing (banks allow at most 180 days per consent).
+</div>
+{% endfor %}
+
+{% if not app_id %}
+<div class="card">
+  <h2>No Enable Banking key found</h2>
+  <p>Put the <code>&lt;application-id&gt;.pem</code> file you downloaded from the Enable Banking control panel in the
+    data folder (<code>/data</code> on the NAS, <code>kasboek\data\</code> locally). Kasboek reads the application ID
+    from its filename. You can also set <code>EB_APP_ID</code> and <code>EB_KEY_PATH</code>.</p>
+</div>
+{% else %}
+
+<div class="card">
+  <h2>Connected banks</h2>
+  {% if sessions %}
+  <table>
+    <tr><th>Bank</th><th>Accounts</th><th>Valid until</th><th>Last sync</th></tr>
+    {% for s in sessions %}
+    <tr>
+      <td>{{ s.aspsp }} <span class="muted">({{ s.country }})</span></td>
+      <td class="num">{{ s.accounts }}</td>
+      <td>{{ (s.valid_until or '')[:10] }}{% if s.days_left is not none %} <span class="muted">({{ s.days_left }} days)</span>{% endif %}</td>
+      <td>{{ s.last_sync or 'never' }}{% if s.last_error %}<div class="bad small">{{ s.last_error }}</div>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <form method="post" action="/banks/sync" style="margin-top:10px">
+    <button type="submit">Sync now</button>
+    <span class="small muted">Kasboek also syncs by itself every {{ sync_hours|round|int }} hours. Banks allow about
+      4 automatic fetches a day.</span>
+  </form>
+  {% if linked %}
+  <p class="small muted" style="margin-top:10px">Linked accounts: {% for a in linked %}{{ a.name }}{{ ', ' if not loop.last }}{% endfor %}</p>
+  {% endif %}
+  {% else %}
+  <p class="muted">No banks connected yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Connect a bank</h2>
+  <p class="small muted">Application <code>{{ app_id[:8] }}…</code>. Read-only: Kasboek can see balances and
+    transactions, never make payments. Only accounts you linked in the Enable Banking control panel are returned.</p>
+
+  <form method="post" action="/banks/redirect" class="filters">
+    <label>Redirect URL
+      <input name="redirect_url" value="{{ redirect_url }}" size="44" placeholder="https://kasboek.example.nl/banks/callback"></label>
+    <button type="submit">Save</button>
+  </form>
+  <p class="small muted">Must be exactly the redirect URL registered for your app in the Enable Banking control panel.
+    Once Kasboek runs behind Nginx Proxy Manager with HTTPS, use <code>https://&lt;your-kasboek-address&gt;/banks/callback</code>
+    and the bank sends you straight back here. Until then any HTTPS URL works: after the bank login, copy the
+    address of the page you land on (even if it shows an error) and paste it in step 2.</p>
+
+  {% if redirect_url %}
+  <h3 style="font-size:15px;margin:16px 0 6px">1. Log in at your bank</h3>
+  {% if aspsp_error %}<p class="bad small">Couldn't load the bank list: {{ aspsp_error }}</p>{% endif %}
+  <form method="post" action="/banks/connect" class="filters">
+    <select name="aspsp" aria-label="Bank">
+      {% for a in aspsps %}<option value="{{ a.name }}|{{ a.country }}" {{ 'selected' if a.name|lower in ('rabobank', 'comdirect') and loop.first }}>{{ a.name }} ({{ a.country }})</option>{% endfor %}
+    </select>
+    <button type="submit">Connect</button>
+  </form>
+
+  <h3 style="font-size:15px;margin:16px 0 6px">2. Paste the address you landed on</h3>
+  <form method="post" action="/banks/finish" class="filters">
+    <input name="pasted_url" size="60" placeholder="https://…?state=…&amp;code=…" required>
+    <button type="submit">Finish</button>
+  </form>
+  <p class="small muted">The first sync fetches as much history as the bank gives. Rows you already imported from
+    files are recognised (same amount within 2 days), not added twice.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -120,3 +120,28 @@ def test_comdirect_cut_off_export_is_flagged():
     data = (S / "comdirect_multi.csv").read_bytes().replace(b'"-1.123,56 EUR"', b'"-2.000,00 EUR"')
     giro = parse_statement("x.csv", data)["checks"]["Girokonto"]
     assert giro["ok"] is False
+
+
+# --- cross-source matching (file rows vs Enable Banking rows) --------------------------------------
+from app.importers import crossmatch
+
+
+def test_crossmatch_pairs_same_amount_within_two_days():
+    new = [{"date": "2026-11-16", "amount": -54.30, "counterparty_iban": ""},
+           {"date": "2026-11-18", "amount": -10.00, "counterparty_iban": ""},
+           {"date": "2026-11-25", "amount": -54.30, "counterparty_iban": ""}]          # too far from the file row
+    old = [{"id": 7, "date": "2026-11-17", "amount": -54.30, "counterparty_iban": ""}]
+    assert crossmatch(new, old) == {0: 7}
+
+
+def test_crossmatch_counts_duplicates_and_prefers_same_iban():
+    new = [{"date": "2026-11-17", "amount": -3.50, "counterparty_iban": ""},
+           {"date": "2026-11-17", "amount": -3.50, "counterparty_iban": ""},
+           {"date": "2026-11-17", "amount": -3.50, "counterparty_iban": ""}]   # three coffees, only two in the file
+    old = [{"id": 1, "date": "2026-11-17", "amount": -3.50, "counterparty_iban": ""},
+           {"id": 2, "date": "2026-11-17", "amount": -3.50, "counterparty_iban": ""}]
+    assert sorted(crossmatch(new, old).values()) == [1, 2]
+    new = [{"date": "2026-11-17", "amount": -40.0, "counterparty_iban": "NL00INGB0000000002"}]
+    old = [{"id": 5, "date": "2026-11-17", "amount": -40.0, "counterparty_iban": "NL00INGB0000000001"},
+           {"id": 6, "date": "2026-11-18", "amount": -40.0, "counterparty_iban": "NL00INGB0000000002"}]
+    assert crossmatch(new, old) == {0: 6}

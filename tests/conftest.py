@@ -14,3 +14,10 @@ def client(data_dir):
     from app.main import app
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _no_background_sync(monkeypatch):
+    monkeypatch.setenv("KASBOEK_SCHEDULER", "0")
+    for k in ("EB_APP_ID", "EB_KEY_PATH", "EB_REDIRECT_URL", "LLM_BASE_URL", "LLM_MODEL"):
+        monkeypatch.delenv(k, raising=False)
