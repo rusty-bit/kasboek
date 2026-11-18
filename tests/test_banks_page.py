@@ -90,3 +90,11 @@ def test_sync_now(client, fake):
     client.post("/banks/finish", data={"pasted_url": f"https://k.example/?state={fake.auth['state']}&code=THE-CODE"})
     r = client.post("/banks/sync")
     assert r.status_code == 200 and "0 new" in r.text
+
+
+def test_eb_callback_path_also_works(client, fake):
+    client.post("/banks/redirect", data={"redirect_url": "https://localhost/eb/callback"})
+    client.post("/banks/connect", data={"aspsp": "Rabobank|NL"}, follow_redirects=False)
+    assert fake.auth["redirect_url"] == "https://localhost/eb/callback"
+    r = client.get("/eb/callback", params={"state": fake.auth["state"], "code": "THE-CODE"})
+    assert r.status_code == 200 and "Connected Rabobank" in r.text

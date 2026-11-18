@@ -458,6 +458,7 @@ def _finish(request, code, state):
 
 
 @app.get("/banks/callback")
+@app.get("/eb/callback")  # same path as the redirect URL registered in the control panel
 def banks_callback(request: Request, code: str = "", state: str = "", error: str = ""):
     if error or not code:
         return _banks_page(request, 400, error="The bank login was cancelled or refused. Try connecting again.")
