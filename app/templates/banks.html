@@ -87,7 +87,15 @@
   {% if aspsp_error %}<p class="bad small">Couldn't load the bank list: {{ aspsp_error }}</p>{% endif %}
   <form method="post" action="/banks/connect" class="filters">
     <select name="aspsp" aria-label="Bank">
-      {% for a in aspsps %}<option value="{{ a.name }}|{{ a.country }}" {{ 'selected' if a.name|lower in ('rabobank', 'comdirect') and loop.first }}>{{ a.name }} ({{ a.country }})</option>{% endfor %}
+      {% set mine = sessions|map(attribute='aspsp')|map('lower')|list %}
+      {% if mine %}
+      <optgroup label="Your banks">
+        {% for a in aspsps if a.name|lower in mine %}<option value="{{ a.name }}|{{ a.country }}">{{ a.name }} ({{ a.country }}) · reconnect</option>{% endfor %}
+      </optgroup>
+      {% endif %}
+      <optgroup label="All banks">
+        {% for a in aspsps if a.name|lower not in mine %}<option value="{{ a.name }}|{{ a.country }}">{{ a.name }} ({{ a.country }})</option>{% endfor %}
+      </optgroup>
     </select>
     <button type="submit">Connect</button>
   </form>

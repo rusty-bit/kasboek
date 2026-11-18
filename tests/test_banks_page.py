@@ -98,3 +98,11 @@ def test_eb_callback_path_also_works(client, fake):
     assert fake.auth["redirect_url"] == "https://localhost/eb/callback"
     r = client.get("/eb/callback", params={"state": fake.auth["state"], "code": "THE-CODE"})
     assert r.status_code == 200 and "Connected Rabobank" in r.text
+
+
+def test_connected_banks_are_listed_first(client, fake):
+    client.post("/banks/redirect", data={"redirect_url": "https://localhost/eb/callback"})
+    client.post("/banks/connect", data={"aspsp": "Rabobank|NL"}, follow_redirects=False)
+    client.post("/banks/finish", data={"pasted_url": f"https://localhost/eb/callback?state={fake.auth['state']}&code=THE-CODE"})
+    html = client.get("/banks").text
+    assert html.index('label="Your banks"') < html.index("Rabobank (NL) · reconnect") < html.index('label="All banks"')
