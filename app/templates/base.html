@@ -30,12 +30,26 @@
     .error { border-left:4px solid var(--bad); background:#fdeeed; padding:10px 14px; border-radius:6px; }
     .ok { border-left:4px solid var(--accent); background:#eef6f3; padding:10px 14px; border-radius:6px; }
     .table-wrap { overflow-x:auto; }
+    .small { font-size:13px; } .nowrap { white-space:nowrap; }
+    .filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .catform { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .catform select { max-width:220px; }
+    tr.unsure td { background:#fffaf0; }
+    .src { border-radius:4px; padding:0 4px; background:#eef0ee; }
+    .src-default, .src-llm { background:#fde9c8; } .src-manual { background:#dcefe7; }
+    button.link { background:none; border:none; color:var(--accent); padding:0; text-decoration:underline; cursor:pointer; font-size:inherit; }
+    .ok-text { color:var(--accent); }
+    header nav { overflow-x:auto; }
+    header .badge { background:var(--warn); color:#fff; border-radius:9px; padding:0 6px; font-size:12px; }
   </style>
 </head>
 <body>
 <header><nav>
   <span class="brand">Kasboek</span>
   <a href="/" class="{{ 'on' if page == 'overview' }}">Overview</a>
+  <a href="/transactions" class="{{ 'on' if page == 'transactions' }}">Transactions</a>
+  <a href="/queue" class="{{ 'on' if page == 'queue' }}">Is this right?{% if queue_count %} ({{ queue_count }}){% endif %}</a>
+  <a href="/rules" class="{{ 'on' if page == 'rules' }}">Rules</a>
   <a href="/import" class="{{ 'on' if page == 'import' }}">Import</a>
   <a href="/accounts" class="{{ 'on' if page == 'accounts' }}">Accounts</a>
 </nav></header>

@@ -12,6 +12,8 @@
   <div class="{{ 'ok' if g.check is none or g.check.ok else 'notice' }}" style="margin-bottom:12px">
     <strong>{{ g.account_name }}</strong>: {{ g.added }} new, {{ g.existing }} already imported
     <span class="muted">({{ g.first }} to {{ g.last }})</span>
+    {% if g.iban_found %}<p style="margin:6px 0 0">Found this account's IBAN ({{ g.iban_found }}) from the
+      transfers between your own accounts, so those now count as transfers. Check it on the Accounts page.</p>{% endif %}
     {% if g.check and not g.check.ok %}
     <p style="margin:6px 0 0">The bank's balances don't add up: start {{ g.check.opening|eur }} + bookings
       {{ g.check.booked|eur }} should be {{ g.check.closing|eur }}. The export was probably cut off and older

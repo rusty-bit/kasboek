@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_select %}
+{% block title %}Is this right? · Kasboek{% endblock %}
+{% block content %}
+<h1>Is this right?</h1>
+{% if groups %}
+<p class="muted">These merchants didn't match anything Kasboek knows. Pick a category once per merchant: all its rows
+  get it, and so do its future ones. The biggest groups are at the top.</p>
+<div class="card table-wrap"><table>
+  <tr><th>Merchant</th><th class="num">Rows</th><th class="num">Total</th><th>Category</th></tr>
+  {% for g in groups %}
+  <tr>
+    <td><div>{{ g.name[:60] }}</div>
+      <div class="small muted">{{ 'money in' if g.direction == 'in' else 'money out' }} · {{ g.first_date }}{% if g.first_date != g.last_date %} to {{ g.last_date }}{% endif %} · {{ g.account_name }}</div></td>
+    <td class="num">{{ g.count }} {{ 'row' if g.count == 1 else 'rows' }}</td>
+    <td class="num {{ 'neg' if g.total < 0 }}">{{ g.total|eur }}</td>
+    <td>
+      <form method="post" action="/queue/assign" class="catform">
+        <input type="hidden" name="tx_id" value="{{ g.tx_id }}">
+        {{ category_select(categories, g.category_key) }}
+        <label class="small muted"><input type="checkbox" name="make_rule" value="1"> rule</label>
+        <button type="submit">Save</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table></div>
+{% if more %}<p class="muted">{{ more }} smaller groups are waiting. They show up here as you work through these.</p>{% endif %}
+{% else %}
+<div class="card ok">Nothing to check. Every transaction has a category.</div>
+{% endif %}
+{% endblock %}

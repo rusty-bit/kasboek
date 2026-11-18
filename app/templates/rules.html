@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_select %}
+{% block title %}Rules · Kasboek{% endblock %}
+{% block content %}
+<h1>Rules</h1>
+{% if error %}<div class="error card">{{ error }}</div>{% endif %}
+<p class="muted">A rule sets the category of every transaction it matches, unless you set that transaction's
+  category by hand. All conditions must hold. When two rules match, the newest one wins.</p>
+
+<div class="card">
+  {% if rules %}
+  <table>
+    <tr><th>When</th><th>Then</th><th></th></tr>
+    {% for r in rules %}
+    <tr>
+      <td>{{ field_label(r.field) }} contains <strong>{{ r.match_text }}</strong>
+        {% if r.direction %} · money {{ r.direction }}{% endif %}
+        {% if r.amount_min is not none %} · at least {{ r.amount_min|eur }}{% endif %}
+        {% if r.amount_max is not none %} · at most {{ r.amount_max|eur }}{% endif %}</td>
+      <td>{{ r.category_label }}</td>
+      <td><form method="post" action="/rules/{{ r.id }}/delete"><button class="link" type="submit">delete</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>No rules yet. Make one here, or tick <em>rule</em> when you change a category on the Transactions page.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>New rule</h2>
+  <form method="post" action="/rules" class="filters">
+    <select name="field" aria-label="Look in">
+      {% for f in ["any", "counterparty", "description", "iban"] %}<option value="{{ f }}">{{ field_label(f) }}</option>{% endfor %}
+    </select>
+    <input name="match_text" placeholder="contains…" required>
+    <select name="direction" aria-label="Direction">
+      <option value="">money in or out</option><option value="out">money out</option><option value="in">money in</option>
+    </select>
+    <input name="amount_min" placeholder="min €" size="6">
+    <input name="amount_max" placeholder="max €" size="6">
+    {{ category_select(categories, "other") }}
+    <button type="submit">Add rule</button>
+  </form>
+</div>
+{% endblock %}

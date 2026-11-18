@@ -1,0 +1,23 @@
+{% from "_macros.html" import category_select %}
+<tr id="tx-{{ t.id }}" class="{{ 'unsure' if t.cat_source in ('default', 'llm') }}">
+  <td class="nowrap">{{ t.date }}</td>
+  <td>
+    <div>{{ t.counterparty or t.description[:60] }}</div>
+    <div class="muted small">{{ t.description[:90] if t.counterparty else '' }}{{ ' · ' if t.counterparty and t.description }}{{ t.account_name }}</div>
+  </td>
+  <td class="num {{ 'neg' if t.amount < 0 }}">{{ t.amount|eur }}</td>
+  <td>
+    <form class="catform" hx-post="/transactions/{{ t.id }}/category" hx-target="#tx-{{ t.id }}" hx-swap="outerHTML"
+          hx-trigger="change" method="post" action="/transactions/{{ t.id }}/category">
+      {{ category_select(categories, t.category_key) }}
+      <label class="small muted" title="Also save a rule for this name"><input type="checkbox" name="make_rule" value="1"> rule</label>
+    </form>
+    <div class="small muted">
+      <span class="src src-{{ t.cat_source }}" title="{{ t.cat_source }}">{{ source_label(t.cat_source) }}</span>
+      {% if t.cat_source in ('default', 'llm') %}
+      · <button class="link" hx-post="/transactions/{{ t.id }}/confirm" hx-target="#tx-{{ t.id }}" hx-swap="outerHTML">looks right</button>
+      {% endif %}
+      {% if note %}<span class="ok-text">· {{ note }}</span>{% endif %}
+    </div>
+  </td>
+</tr>

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_select %}
+{% block title %}Transactions · Kasboek{% endblock %}
+{% block content %}
+<h1>Transactions</h1>
+
+<form class="card filters" method="get" action="/transactions">
+  <select name="month" aria-label="Month">
+    <option value="all" {{ 'selected' if not f.month }}>All months</option>
+    {% for m in months %}<option value="{{ m }}" {{ 'selected' if m == f.month }}>{{ m }}</option>{% endfor %}
+  </select>
+  <select name="account" aria-label="Account">
+    <option value="">All accounts</option>
+    {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id|string == f.account }}>{{ a.name }}</option>{% endfor %}
+  </select>
+  <select name="owner" aria-label="Owner">
+    <option value="">Everyone</option>
+    {% for o in owners %}<option value="{{ o }}" {{ 'selected' if o == f.owner }}>{{ o }}</option>{% endfor %}
+  </select>
+  <select name="category" aria-label="Category">
+    <option value="">All categories</option>
+    {% for c in categories %}<option value="{{ c.key }}" {{ 'selected' if c.key == f.category }}>{{ c.label }}</option>{% endfor %}
+  </select>
+  <input type="search" name="q" value="{{ f.q }}" placeholder="Search name or description">
+  <button type="submit">Show</button>
+</form>
+
+<div class="card">
+  <p class="muted">{{ rows|length }} transactions{{ ' (showing the newest 1000)' if rows|length >= 1000 }} ·
+    in <strong>{{ total_in|eur }}</strong> · out <strong class="neg">{{ total_out|eur }}</strong>
+    <span class="small">(transfers between your own accounts left out)</span></p>
+  {% if rows %}
+  <p class="small muted">Change a category and it's saved straight away. Kasboek remembers the merchant and uses
+    the same category for its other rows, now and in future imports. Tick <em>rule</em> first to also save a rule.</p>
+  <div class="table-wrap"><table class="tx">
+    <tr><th>Date</th><th>Name</th><th class="num">Amount</th><th>Category</th></tr>
+    {% for t in rows %}{% include "_tx_row.html" %}{% endfor %}
+  </table></div>
+  {% else %}
+  <p>No transactions match. {% if not months %}<a href="/import">Import a statement</a> first.{% endif %}</p>
+  {% endif %}
+</div>
+{% endblock %}

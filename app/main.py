@@ -18,6 +18,14 @@ log = logging.getLogger("kasboek")
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["eur"] = eur
+templates.env.globals["bank_label"] = store.bank_label
+templates.env.globals["kinds"] = store.KINDS
+
+SOURCE_LABELS = {"manual": "set by you", "transfer": "own transfer", "rule": "rule", "memory": "learned",
+                 "keyword": "keyword", "llm": "AI guess", "default": "unsure"}
+templates.env.globals["source_label"] = lambda s: SOURCE_LABELS.get(s or "", s or "")
+FIELD_LABELS = {"any": "name or description", "counterparty": "name", "description": "description", "iban": "IBAN"}
+templates.env.globals["field_label"] = lambda f: FIELD_LABELS.get(f, f)
 
 
 @asynccontextmanager
@@ -31,6 +39,17 @@ app = FastAPI(title="Kasboek", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 
+def render(request, name, ctx=None, status=200, con=None):
+    """Template response with what every page needs (nav queue count, categories)."""
+    ctx = dict(ctx or {})
+    if con is None:
+        with db.db() as c:
+            return render(request, name, ctx, status, c)
+    ctx.setdefault("queue_count", store.queue_count(con))
+    ctx.setdefault("categories", store.categories(con))
+    return templates.TemplateResponse(request, name, ctx, status_code=status)
+
+
 @app.get("/health")
 def health():
     with db.db() as con:
@@ -42,17 +61,16 @@ def health():
 def overview(request: Request):
     with db.db() as con:
         tx_count = con.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
-    return templates.TemplateResponse(request, "overview.html", {"page": "overview", "tx_count": tx_count})
+        return render(request, "overview.html", {"page": "overview", "tx_count": tx_count}, con=con)
 
 
+# --- import ---------------------------------------------------------------------------------------
 MAX_UPLOAD = 20 * 1024 * 1024
 
 
 def _import_page(request, status=200, **ctx):
     with db.db() as con:
-        accs = store.accounts(con)
-    return templates.TemplateResponse(request, "import.html", {"page": "import", "accounts": accs, **ctx},
-                                      status_code=status)
+        return render(request, "import.html", {"page": "import", "accounts": store.accounts(con), **ctx}, status, con)
 
 
 @app.get("/import")
@@ -85,13 +103,11 @@ async def import_upload(request: Request, file: UploadFile = File(...), account_
     return _import_page(request, report=report, filename=file.filename, skipped=st["skipped_sections"])
 
 
+# --- accounts -------------------------------------------------------------------------------------
 @app.get("/accounts")
 def accounts_page(request: Request):
     with db.db() as con:
-        accs = store.accounts(con)
-    return templates.TemplateResponse(request, "accounts.html",
-                                      {"page": "accounts", "accounts": accs, "kinds": store.KINDS,
-                                       "bank_label": store.bank_label})
+        return render(request, "accounts.html", {"page": "accounts", "accounts": store.accounts(con)}, con=con)
 
 
 @app.post("/accounts/new")
@@ -105,10 +121,8 @@ def account_new(request: Request, name: str = Form(""), kind: str = Form("checki
             store.update_account(con, acc, name=name, kind=kind, owner=owner, included=True, iban=iban or None)
     except ValueError as e:
         with db.db() as con:
-            accs = store.accounts(con)
-        return templates.TemplateResponse(request, "accounts.html",
-                                          {"page": "accounts", "accounts": accs, "kinds": store.KINDS,
-                                           "bank_label": store.bank_label, "error": str(e)}, status_code=400)
+            return render(request, "accounts.html", {"page": "accounts", "accounts": store.accounts(con),
+                                                     "error": str(e)}, 400, con)
     return RedirectResponse("/accounts", status_code=303)
 
 
@@ -123,6 +137,100 @@ def account_edit(request: Request, account_id: int, name: str = Form(""), kind: 
         except ValueError as e:
             error = str(e)
         a = store.account(con, account_id)
-    return templates.TemplateResponse(request, "_account_row.html",
-                                      {"a": a, "kinds": store.KINDS, "error": error, "saved": error is None,
-                                       "bank_label": store.bank_label})
+        return render(request, "_account_row.html", {"a": a, "error": error, "saved": error is None}, con=con)
+
+
+# --- transactions ---------------------------------------------------------------------------------
+@app.get("/transactions")
+def transactions_page(request: Request, month: str = "", account: str = "", owner: str = "", category: str = "",
+                      q: str = ""):
+    with db.db() as con:
+        months = store.months(con)
+        if not month and not (q or category or account or owner):
+            month = months[0] if months else ""
+        if month == "all":
+            month = ""
+        rows = store.transactions(con, month=month or None, account_id=int(account) if account.isdigit() else None,
+                                  owner=owner or None, category=category or None, search=q.strip() or None)
+        accs = store.accounts(con)
+        total_in = round(sum(r["amount"] for r in rows if r["amount"] > 0 and r["category_key"] != "transfer"), 2)
+        total_out = round(sum(r["amount"] for r in rows if r["amount"] < 0 and r["category_key"] != "transfer"), 2)
+        return render(request, "transactions.html", {
+            "page": "transactions", "rows": rows, "months": months, "accounts": accs,
+            "owners": sorted({a["owner"] for a in accs}),
+            "f": {"month": month, "account": account, "owner": owner, "category": category, "q": q},
+            "total_in": total_in, "total_out": total_out}, con=con)
+
+
+def _tx_row(request, con, tx_id, note=None):
+    return render(request, "_tx_row.html", {"t": store.transaction(con, tx_id), "note": note}, con=con)
+
+
+@app.post("/transactions/{tx_id}/category")
+def tx_set_category(request: Request, tx_id: int, category: str = Form(...), make_rule: str = Form("")):
+    with db.db() as con:
+        changed = store.set_category(con, tx_id, category, make_rule=bool(make_rule))
+        note = f"Also updated {changed} other rows from this merchant." if changed else None
+        return _tx_row(request, con, tx_id, note)
+
+
+@app.post("/transactions/{tx_id}/confirm")
+def tx_confirm(request: Request, tx_id: int):
+    with db.db() as con:
+        store.confirm(con, tx_id)
+        return _tx_row(request, con, tx_id)
+
+
+# --- "Is this right?" queue -----------------------------------------------------------------------
+QUEUE_PAGE = 100
+
+@app.get("/queue")
+def queue_page(request: Request):
+    with db.db() as con:
+        groups = store.queue_groups(con)
+        return render(request, "queue.html", {"page": "queue", "groups": groups[:QUEUE_PAGE],
+                                              "more": max(0, len(groups) - QUEUE_PAGE)}, con=con)
+
+
+@app.post("/queue/assign")
+def queue_assign(tx_id: int = Form(...), category: str = Form(...), make_rule: str = Form("")):
+    with db.db() as con:
+        store.set_category(con, tx_id, category, make_rule=bool(make_rule))
+    return RedirectResponse("/queue", status_code=303)
+
+
+# --- rules ----------------------------------------------------------------------------------------
+def _num(s):
+    s = (s or "").strip().replace(",", ".")
+    try:
+        return float(s) if s else None
+    except ValueError:
+        raise ValueError(f"'{s}' is not an amount.") from None
+
+
+@app.get("/rules")
+def rules_page(request: Request):
+    with db.db() as con:
+        return render(request, "rules.html", {"page": "rules", "rules": store.rules(con)}, con=con)
+
+
+@app.post("/rules")
+def rule_add(request: Request, match_text: str = Form(""), field: str = Form("any"), category: str = Form(...),
+             direction: str = Form(""), amount_min: str = Form(""), amount_max: str = Form("")):
+    try:
+        with db.db() as con:
+            store.add_rule(con, match_text=match_text, field=field, category=category,
+                           direction=direction if direction in ("in", "out") else None,
+                           amount_min=_num(amount_min), amount_max=_num(amount_max))
+    except ValueError as e:
+        with db.db() as con:
+            return render(request, "rules.html", {"page": "rules", "rules": store.rules(con), "error": str(e)},
+                          400, con)
+    return RedirectResponse("/rules", status_code=303)
+
+
+@app.post("/rules/{rule_id}/delete")
+def rule_delete(rule_id: int):
+    with db.db() as con:
+        store.delete_rule(con, rule_id)
+    return RedirectResponse("/rules", status_code=303)

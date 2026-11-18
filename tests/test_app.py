@@ -86,3 +86,70 @@ def test_new_account_then_import_into_it(client):
         acc = con.execute("SELECT id FROM accounts WHERE name='Cash card'").fetchone()["id"]
     r = upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-3,50;Koffiebar\n", account=str(acc))
     assert r.status_code == 200 and "1 new" in r.text
+
+
+# --- M2 pages --------------------------------------------------------------------------------------
+def first_tx(like):
+    with db.db() as con:
+        return con.execute("SELECT id FROM transactions WHERE counterparty LIKE ?", (f"%{like}%",)).fetchone()["id"]
+
+
+def test_transactions_page_lists_and_filters(client):
+    upload(client, "rabobank.csv")
+    r = client.get("/transactions")
+    assert r.status_code == 200 and "Albert Heijn" in r.text and "Groceries" in r.text and "€ 3.500,00" in r.text
+    r = client.get("/transactions", params={"q": "werkgever"})
+    assert "Werkgever" in r.text and "Albert Heijn" not in r.text
+    r = client.get("/transactions", params={"category": "groceries", "month": "2026-10"})
+    assert "Albert Heijn" in r.text and "Werkgever" not in r.text
+
+
+def test_set_category_inline_returns_row(client):
+    upload(client, "rabobank.csv")
+    tid = first_tx("Albert Heijn")
+    r = client.post(f"/transactions/{tid}/category", data={"category": "eating_out"})
+    assert r.status_code == 200 and f'id="tx-{tid}"' in r.text and "manual" in r.text
+    assert 'value="eating_out" selected' in r.text
+
+
+def test_set_category_with_make_rule_shows_on_rules_page(client):
+    upload(client, "rabobank.csv")
+    tid = first_tx("Albert Heijn")
+    client.post(f"/transactions/{tid}/category", data={"category": "eating_out", "make_rule": "1"})
+    r = client.get("/rules")
+    assert "albert heijn klimmen" in r.text and "Eating out" in r.text
+
+
+def test_rules_page_add_and_delete(client):
+    upload(client, "rabobank.csv")
+    r = client.post("/rules", data={"match_text": "hypotheekbank", "field": "counterparty", "category": "housing",
+                                    "direction": "out", "amount_min": "", "amount_max": ""}, follow_redirects=False)
+    assert r.status_code == 303
+    with db.db() as con:
+        [rule] = con.execute("SELECT id FROM rules").fetchall()
+    assert "hypotheekbank" in client.get("/rules").text
+    client.post(f"/rules/{rule['id']}/delete", follow_redirects=False)
+    assert "hypotheekbank" not in client.get("/rules").text
+
+
+def test_queue_page_groups_and_assigns(client):
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-30,00;Jan Pietersen\n09-10-2026;-30,00;Jan Pietersen\n",
+           account=str(_new_account(client)))
+    r = client.get("/queue")
+    assert r.status_code == 200 and "jan pietersen" in r.text.lower() and "2 rows" in r.text
+    tid = first_tx("Jan Pietersen")
+    r = client.post("/queue/assign", data={"tx_id": str(tid), "category": "gifts"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert "Nothing to check" in client.get("/queue").text
+
+
+def test_nav_shows_queue_count(client):
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-30,00;Jan Pietersen\n",
+           account=str(_new_account(client)))
+    assert "Is this right? (1)" in client.get("/").text
+
+
+def _new_account(client):
+    client.post("/accounts/new", data={"name": "Test", "kind": "checking", "owner": "shared", "iban": ""})
+    with db.db() as con:
+        return con.execute("SELECT id FROM accounts WHERE name='Test'").fetchone()["id"]

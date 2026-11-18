@@ -1,0 +1,11 @@
+{% macro category_select(categories, selected, name="category", attrs="") %}
+<select name="{{ name }}" aria-label="Category" {{ attrs|safe }}>
+  {% for kind, label in [("expense", "Spending"), ("income", "Income"), ("transfer", "Other")] %}
+  <optgroup label="{{ label }}">
+    {% for c in categories if c.kind == kind %}
+    <option value="{{ c.key }}" {{ 'selected' if c.key == selected }}>{{ c.label }}</option>
+    {% endfor %}
+  </optgroup>
+  {% endfor %}
+</select>
+{% endmacro %}

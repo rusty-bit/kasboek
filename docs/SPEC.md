@@ -195,13 +195,13 @@ per_day = free ÷ days left (today counts)
 
 ---
 
-## 9. Open decisions (ask Owner)
+## 9. Decisions (answered by the owner, 2026-11-18)
 
-1. Login: one shared household login, or one each with "mine/ours" views?
-2. Host: the NAS or the AI mini PC? Recommendation: the NAS for the app, with the AI box only as the optional LLM endpoint.
-3. HTTPS for the Enable Banking redirect via Nginx Proxy Manager, or the paste-URL workaround only?
-4. Should the side business (side-business) be its own account group so it stays out of the household totals?
-5. How far back to import (Enable Banking typically gives 90 days to 2 years depending on the bank; files can go further)?
+1. **Login:** one shared household login. Accounts still carry `owner` for filtering.
+2. **Host:** the NAS. The AI box is only the optional LLM endpoint.
+3. **Enable Banking redirect:** HTTPS via Nginx Proxy Manager. The paste-URL box can stay as a fallback.
+4. **side-business stays out of the household totals.** Its accounts get owner `side-business` and are excluded from totals, and the `business` / `side_income` categories don't count toward household free-to-spend.
+5. **History:** 5 years where possible. Files give that: the real Rabobank export goes back to 2021-07. comdirect caps a file at ~500 bookings per account, so older periods need extra exports. Enable Banking only back-fills what the bank allows (90 days to 2 years).
 
 ## 10. Alternative worth knowing about
 **Actual Budget** and **Firefly III** are mature, self-hosted, and both already sync EU banks through Enable Banking. Firefly III has piggy banks and rules. The case for building Kasboek anyway is the Finanzguru-style contract folder, free-to-spend, the forecast, and the habit → pot link, none of which either does well. A fallback plan is to use Actual/Firefly as the storage + sync layer and build these features on their API.
