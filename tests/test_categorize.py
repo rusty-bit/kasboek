@@ -125,3 +125,66 @@ def test_refund_from_a_shop_keeps_the_shop_category():
     assert categorize(tx(cp="Budget Energie", amount=80), **CTX) == ("energy", "keyword")
     # but direction-specific ones stay specific
     assert categorize(tx(cp="Belastingdienst", amount=300), **CTX) == ("benefits", "keyword")
+
+
+# --- smarter learning: IBAN memory, chains, MCC, AI guesses -----------------------------------------
+from app.categorize import brand, suggest_rule_text, mcc_category, memory_keys
+
+
+def test_brand_is_first_two_words_when_distinctive():
+    assert brand("bakkerij voncken c kerkrade") == "bakkerij voncken"
+    assert brand("albert heijn klimmen") == "albert heijn"
+    assert brand("de vries") is None            # too short to be a chain
+    assert brand("van den berg") is None
+    assert brand("zeeman") is None              # one word: the name itself is the key
+
+
+def test_chain_learned_from_one_branch_applies_to_others():
+    mem = {("bakkerij voncken c kerkrade", "out"): "groceries"}
+    t = tx(cp="Bakkerij Voncken Nuth")
+    assert categorize(t, own_ibans=set(), rules=[], memory=mem) == ("groceries", "chain")
+
+
+def test_chain_not_used_when_branches_disagree():
+    mem = {("garage jansen heerlen", "out"): "car", ("garage jansen sittard", "out"): "shopping"}
+    assert categorize(tx(cp="Garage Jansen Brunssum"), own_ibans=set(), rules=[], memory=mem)[1] == "default"
+
+
+def test_iban_memory_for_people_and_direct_debits():
+    mem = {("iban:NL00INGB0000000007", "out"): "kids"}
+    t = tx(cp="J. Smit", desc="oppas", cp_iban="NL00INGB0000000007")
+    assert categorize(t, own_ibans=set(), rules=[], memory=mem) == ("kids", "iban")
+
+
+def test_memory_keys_skip_iban_of_payment_providers():
+    shop = tx(cp="Kapsalon Mooi", cp_iban="NL00RABO0000000008", amount=-25)
+    assert memory_keys(shop) == [("kapsalon mooi", "out"), ("iban:NL00RABO0000000008", "out")]
+    paypal = tx(cp="PayPal Europe S.a.r.l.", desc="Webshop X", cp_iban="LU00PAYP0000000009")
+    assert memory_keys(paypal) == [("webshop x", "out")]
+
+
+def test_mcc_from_bank_card_data():
+    assert mcc_category("5411", "out") == "groceries"
+    assert mcc_category("5812", "out") == "eating_out"
+    assert mcc_category("5541", "out") == "fuel"
+    assert mcc_category("3012", "out") == "holidays"   # airline range
+    assert mcc_category("6011", "out") == "cash"
+    assert mcc_category("9999", "out") is None
+    assert mcc_category(None, "out") is None
+    t = dict(tx(cp="Onbekende Winkel"), mcc="5411")
+    assert categorize(t, own_ibans=set(), rules=[], memory={}) == ("groceries", "mcc")
+
+
+def test_keyword_beats_mcc_and_ai_comes_last():
+    t = dict(tx(cp="Kruidvat 123"), mcc="5912")        # MCC says pharmacy, keyword says personal care
+    assert categorize(t, own_ibans=set(), rules=[], memory={})[0] == "personal_care"
+    llm = {("frituur de pan", "out"): "eating_out"}
+    assert categorize(tx(cp="Frituur de Pan"), own_ibans=set(), rules=[], memory={}, llm=llm)[1] == "keyword"
+    llm = {("zaak x", "out"): "hobbies"}
+    assert categorize(tx(cp="Zaak X"), own_ibans=set(), rules=[], memory={}, llm=llm) == ("hobbies", "llm")
+
+
+def test_suggest_rule_text_is_chain_level():
+    assert suggest_rule_text(tx(cp="Albert Heijn 1234 KLIMMEN")) == "albert heijn"
+    assert suggest_rule_text(tx(cp="Zeeman Heerlen>HEERLEN")) == "zeeman heerlen"
+    assert suggest_rule_text(tx(cp="", desc="REWE MARKT GMBH AACHEN DEU 2026-10-01T10:00:00")) == "rewe markt"

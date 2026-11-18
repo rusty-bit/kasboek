@@ -72,6 +72,13 @@ CREATE TABLE IF NOT EXISTS merchant_memory (
   hits INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (norm, direction)
 );
+CREATE TABLE IF NOT EXISTS llm_guesses (         -- AI suggestions; shown as 'AI guess' until you confirm
+  norm TEXT NOT NULL,
+  direction TEXT NOT NULL,
+  category_id INTEGER NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (norm, direction)
+);
 CREATE TABLE IF NOT EXISTS recurring (
   id INTEGER PRIMARY KEY,
   key TEXT UNIQUE NOT NULL,
@@ -189,6 +196,8 @@ def db():
 # Columns added after the first schema. CREATE TABLE IF NOT EXISTS does not add them to an existing DB.
 MIGRATIONS = [
     ("accounts", "ext_key", "TEXT"),
+    ("transactions", "mcc", "TEXT"),                       # merchant category code (Enable Banking cards)
+    ("transactions", "source", "TEXT NOT NULL DEFAULT 'file'"),  # file | enablebanking
 ]
 
 

@@ -1,15 +1,54 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_select %}
+{% from "_macros.html" import category_select, rule_offer %}
 {% block title %}Is this right? · Kasboek{% endblock %}
 {% block content %}
 <h1>Is this right?</h1>
+{% if error %}<div class="error card">{{ error }}</div>{% endif %}
+{% if message %}<div class="ok card">{{ message }}</div>{% endif %}
+
+{% if last %}
+<div class="card ok">
+  ✓ Saved <strong>{{ last.t.counterparty or last.t.description[:50] }}</strong> as {{ last.t.category_label }}{% if last.changed %},
+  and {{ last.changed }} other {{ 'row' if last.changed == 1 else 'rows' }} from this shop{% endif %}.
+  <form class="catform small" method="post" action="/queue/rule" style="margin-top:8px">
+    <input type="hidden" name="tx_id" value="{{ last.t.id }}">
+    {{ rule_offer(last.offer, last.t.category_key, last.t.category_label) }}
+  </form>
+</div>
+{% elif rule_hits >= 0 %}
+<div class="card ok">✓ Rule saved: it matches {{ rule_hits }} {{ 'transaction' if rule_hits == 1 else 'transactions' }}.
+  <a href="/rules">See all rules</a></div>
+{% endif %}
+
+<div class="card">
+  <h2>AI helper (optional)</h2>
+  {% if llm_url %}
+  <form method="post" action="/queue/ask-ai" class="filters">
+    <span class="muted">Ask <strong>{{ llm_model }}</strong> at {{ llm_url }} to suggest categories for the
+      {{ [ai_batch, groups_total]|min }} biggest unsure merchants. It gets the shop name, a short description,
+      money in/out and a rounded amount, no IBANs. Its answers appear here as <span class="src src-llm">AI guess</span>
+      for you to confirm.</span>
+    <button type="submit">Ask the AI</button>
+  </form>
+  {% endif %}
+  <details {{ 'open' if not llm_url }}>
+    <summary class="small muted">{{ 'Change the AI model' if llm_url else 'Set up a local AI model (Ollama on your network)' }}</summary>
+    <form method="post" action="/settings/llm" class="filters" style="margin-top:8px">
+      <input name="llm_base_url" value="{{ llm_url or '' }}" placeholder="http://aibox:11434/v1" size="30">
+      <input name="llm_model" value="{{ llm_model or '' }}" placeholder="qwen2.5:7b" size="14">
+      <button type="submit">Save</button>
+      <span class="small muted">Only addresses on your own network are accepted. Leave empty to switch the AI off.</span>
+    </form>
+  </details>
+</div>
+
 {% if groups %}
-<p class="muted">These merchants didn't match anything Kasboek knows. Pick a category once per merchant: all its rows
-  get it, and so do its future ones. The biggest groups are at the top.</p>
+<p class="muted">These shops and names didn't match anything Kasboek knows. Pick a category once per merchant:
+  all its rows get it, and so do its future ones. The biggest groups are at the top.</p>
 <div class="card table-wrap"><table>
   <tr><th>Merchant</th><th class="num">Rows</th><th class="num">Total</th><th>Category</th></tr>
   {% for g in groups %}
-  <tr>
+  <tr class="{{ 'unsure' if g.cat_source == 'default' }}">
     <td><div>{{ g.name[:60] }}</div>
       <div class="small muted">{{ 'money in' if g.direction == 'in' else 'money out' }} · {{ g.first_date }}{% if g.first_date != g.last_date %} to {{ g.last_date }}{% endif %} · {{ g.account_name }}</div></td>
     <td class="num">{{ g.count }} {{ 'row' if g.count == 1 else 'rows' }}</td>
@@ -18,8 +57,8 @@
       <form method="post" action="/queue/assign" class="catform">
         <input type="hidden" name="tx_id" value="{{ g.tx_id }}">
         {{ category_select(categories, g.category_key) }}
-        <label class="small muted"><input type="checkbox" name="make_rule" value="1"> rule</label>
-        <button type="submit">Save</button>
+        <button type="submit">{{ 'Yes, save' if g.cat_source == 'llm' else 'Save' }}</button>
+        {% if g.cat_source == 'llm' %}<span class="src src-llm small">AI guess</span>{% endif %}
       </form>
     </td>
   </tr>

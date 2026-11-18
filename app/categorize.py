@@ -189,30 +189,130 @@ def rule_matches(r: Rule, t):
     return needle in hay["counterparty"] or needle in hay["description"] or (needle_iban and needle_iban in iban)
 
 
+# --- learning helpers -----------------------------------------------------------------------------
+def brand(norm):
+    """Chain name: the first two words of a normalised merchant, when they are distinctive enough
+    ('bakkerij voncken c kerkrade' -> 'bakkerij voncken'). None for one word or short pairs ('de vries')."""
+    words = (norm or "").split()
+    if len(words) < 2 or len(words[0]) + len(words[1]) < 8 or max(len(words[0]), len(words[1])) < 4:
+        return None
+    return " ".join(words[:2])
+
+
+def suggest_rule_text(t):
+    """What a rule made from this row should match: the chain name, else the normalised merchant."""
+    norm = normalize_merchant(merchant_text(t))
+    return brand(norm) or norm
+
+
+def memory_keys(t):
+    """Keys to remember a choice under: the merchant name, plus the counterparty IBAN when the counterparty
+    is the merchant itself (a payment provider's IBAN is shared by thousands of shops)."""
+    d = direction(t)
+    keys = []
+    norm = normalize_merchant(merchant_text(t))
+    if norm:
+        keys.append((norm, d))
+    cp = (t.get("counterparty") or "").strip()
+    iban = (t.get("counterparty_iban") or "").replace(" ", "").upper()
+    if iban and cp and merchant_text(t) == cp and not any(p in cp.lower() for p in PROCESSORS):
+        keys.append((f"iban:{iban}", d))
+    return keys
+
+
+def chains(memory):
+    """{(brand, direction): category} for chains whose taught branches all agree."""
+    seen = {}
+    for (norm, d), cat in memory.items():
+        if norm.startswith("iban:"):
+            continue
+        b = brand(norm)
+        if b:
+            seen.setdefault((b, d), set()).add(cat)
+    return {k: next(iter(v)) for k, v in seen.items() if len(v) == 1}
+
+
+# Merchant category codes (ISO 18245) that card payments from Enable Banking can carry.
+MCC_RANGES = [
+    ((3000, 3350), "holidays"), ((3351, 3500), "holidays"), ((3501, 3999), "holidays"),  # airlines, car hire, hotels
+    ((4111, 4112), "public_transport"), ((4121, 4121), "public_transport"), ((4131, 4131), "public_transport"),
+    ((4511, 4511), "holidays"), ((4722, 4722), "holidays"), ((7011, 7012), "holidays"), ((7033, 7033), "holidays"),
+    ((4784, 4784), "car"), ((7523, 7523), "car"), ((7531, 7549), "car"), ((5511, 5599), "car"),
+    ((5541, 5542), "fuel"), ((5552, 5552), "fuel"), ((5983, 5983), "fuel"),
+    ((4812, 4816), "telecom"), ((4899, 4899), "telecom"),
+    ((4900, 4900), "energy"),
+    ((5411, 5411), "groceries"), ((5422, 5422), "groceries"), ((5441, 5441), "groceries"), ((5451, 5451), "groceries"),
+    ((5462, 5462), "groceries"), ((5499, 5499), "groceries"), ((5921, 5921), "groceries"),
+    ((5811, 5814), "eating_out"),
+    ((5912, 5912), "health"), ((5122, 5122), "health"), ((8011, 8099), "health"), ((8043, 8043), "health"),
+    ((5977, 5977), "personal_care"), ((7230, 7230), "personal_care"), ((7298, 7298), "personal_care"),
+    ((5200, 5200), "home"), ((5211, 5261), "home"), ((5712, 5719), "home"), ((5992, 5992), "home"),
+    ((5310, 5399), "shopping"), ((5611, 5699), "shopping"), ((5732, 5735), "shopping"), ((5942, 5949), "shopping"),
+    ((5964, 5969), "shopping"),
+    ((5815, 5818), "subscriptions"), ((4841, 4841), "subscriptions"),
+    ((5940, 5941), "hobbies"), ((7941, 7999), "hobbies"),
+    ((6300, 6300), "insurance"), ((6011, 6011), "cash"),
+    ((8211, 8211), "kids"), ((8351, 8351), "kids"), ((5641, 5641), "kids"), ((5945, 5945), "kids"),
+    ((9311, 9311), "taxes"), ((9399, 9399), "taxes"), ((9222, 9222), "taxes"),
+]
+
+
+def mcc_category(mcc, d):
+    """Shop type -> category. Money in with a shop code is a refund and keeps the shop's category."""
+    try:
+        code = int(str(mcc).strip())
+    except (TypeError, ValueError):
+        return None
+    hits = [(hi - lo, cat) for (lo, hi), cat in MCC_RANGES if lo <= code <= hi]
+    if not hits:
+        return None
+    cat = min(hits)[1]   # the narrowest range wins: 5541 (fuel) over 5511-5599 (car dealers and parts)
+    return None if (cat == "cash" and d == "in") else cat
+
+
 # --- pipeline -------------------------------------------------------------------------------------
-def categorize(t, own_ibans, rules, memory):
-    """-> (category_key, source). rules: list[Rule]; memory: {(normalized merchant, direction): category}."""
+def categorize(t, own_ibans, rules, memory, llm=None, chain_index=None):
+    """-> (category_key, source). First hit wins:
+    transfer > rule > memory (same name) > iban (same counterparty IBAN) > chain (other branch of a taught
+    shop) > keyword > mcc (bank's shop type) > llm (stored AI guess) > default.
+    memory: {(normalized merchant or 'iban:<IBAN>', direction): category}; llm: same shape, AI guesses."""
     if (t.get("counterparty_iban") or "").upper() in own_ibans and t.get("counterparty_iban"):
         return "transfer", "transfer"
     for r in sorted(rules, key=lambda r: r.id, reverse=True):   # newest rule first
         if rule_matches(r, t):
             return r.category, "rule"
-    key = (normalize_merchant(merchant_text(t)), direction(t))
-    if key[0] and key in memory:
-        return memory[key], "memory"
+    keys = memory_keys(t)
+    d = direction(t)
+    norm = normalize_merchant(merchant_text(t))
+    if norm and (norm, d) in memory:
+        return memory[(norm, d)], "memory"
+    for k in keys:
+        if k[0].startswith("iban:") and k in memory:
+            return memory[k], "iban"
+    b = brand(norm)
+    if b:
+        idx = chain_index if chain_index is not None else chains(memory)
+        if (b, d) in idx:
+            return idx[(b, d)], "chain"
     cat = keyword_category(t)
     if cat:
         return cat, "keyword"
+    cat = mcc_category(t.get("mcc"), d)
+    if cat:
+        return cat, "mcc"
+    if llm and norm and (norm, d) in llm:
+        return llm[(norm, d)], "llm"
     return ("other_income" if t["amount"] > 0 else "other"), "default"
 
 
-def categorize_all(rows, own_ibans, rules, memory):
+def categorize_all(rows, own_ibans, rules, memory, llm=None):
     """-> {id: (category, source)} for every non-manual row whose result differs from what it has now."""
     out = {}
+    idx = chains(memory)
     for t in rows:
         if t.get("cat_source") == "manual":
             continue
-        res = categorize(t, own_ibans, rules, memory)
+        res = categorize(t, own_ibans, rules, memory, llm=llm, chain_index=idx)
         if res != (t.get("category"), t.get("cat_source")):
             out[t["id"]] = res
     return out

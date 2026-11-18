@@ -112,12 +112,16 @@ def test_set_category_inline_returns_row(client):
     assert 'value="eating_out" selected' in r.text
 
 
-def test_set_category_with_make_rule_shows_on_rules_page(client):
+def test_after_saving_the_row_offers_a_rule(client):
     upload(client, "rabobank.csv")
     tid = first_tx("Albert Heijn")
-    client.post(f"/transactions/{tid}/category", data={"category": "eating_out", "make_rule": "1"})
+    r = client.post(f"/transactions/{tid}/category", data={"category": "eating_out"})
+    assert 'name="match_text" value="albert heijn"' in r.text and "Make rule" in r.text
+    assert 'type="checkbox"' not in r.text
+    r = client.post(f"/transactions/{tid}/rule", data={"match_text": "albert heijn", "category": "eating_out"})
+    assert r.status_code == 200 and "Rule saved" in r.text and "1 transaction" in r.text
     r = client.get("/rules")
-    assert "albert heijn klimmen" in r.text and "Eating out" in r.text
+    assert "albert heijn" in r.text and "Eating out" in r.text
 
 
 def test_rules_page_add_and_delete(client):
@@ -153,3 +157,43 @@ def _new_account(client):
     client.post("/accounts/new", data={"name": "Test", "kind": "checking", "owner": "shared", "iban": ""})
     with db.db() as con:
         return con.execute("SELECT id FROM accounts WHERE name='Test'").fetchone()["id"]
+
+
+def test_queue_save_offers_rule_and_rule_from_queue(client):
+    acc = _new_account(client)
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-8,00;Kiosk Zuid 4411\n", account=str(acc))
+    tid = first_tx("Kiosk")
+    r = client.post("/queue/assign", data={"tx_id": str(tid), "category": "groceries"})
+    assert "Saved" in r.text and 'name="match_text" value="kiosk zuid"' in r.text
+    r = client.post("/queue/rule", data={"tx_id": str(tid), "match_text": "kiosk", "category": "groceries"})
+    assert "Rule saved: it matches 1 transaction" in r.text
+
+
+def test_llm_settings_reject_cloud_urls(client):
+    r = client.post("/settings/llm", data={"llm_base_url": "https://api.openai.com/v1", "llm_model": "gpt"})
+    assert r.status_code == 400 and "own network" in r.text
+    r = client.post("/settings/llm", data={"llm_base_url": "http://aibox:11434/v1", "llm_model": "qwen2.5:7b"})
+    assert "Ask the AI" in r.text and "qwen2.5:7b" in r.text
+
+
+def test_ask_ai_stores_guesses_for_confirmation(client, monkeypatch):
+    from app import llm
+    acc = _new_account(client)
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-30,00;Zaak X\n", account=str(acc))
+    client.post("/settings/llm", data={"llm_base_url": "http://aibox:11434/v1", "llm_model": "m"})
+    monkeypatch.setattr(llm, "suggest", lambda items, cats, base_url, model: {("zaak x", "out"): "hobbies"})
+    r = client.post("/queue/ask-ai")
+    assert "suggested a category for 1 merchant" in r.text and "AI guess" in r.text and "Yes, save" in r.text
+
+
+def test_ask_ai_unreachable_model_is_explained(client, monkeypatch):
+    from app import llm
+    acc = _new_account(client)
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-30,00;Zaak X\n", account=str(acc))
+    client.post("/settings/llm", data={"llm_base_url": "http://aibox:11434/v1", "llm_model": "m"})
+
+    def boom(*a, **k):
+        raise llm.LLMError("Couldn't reach the AI model at http://aibox:11434/v1: connection refused")
+    monkeypatch.setattr(llm, "suggest", boom)
+    r = client.post("/queue/ask-ai")
+    assert r.status_code == 400 and "reach the AI model" in r.text

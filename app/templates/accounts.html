@@ -7,8 +7,9 @@
 <div class="card">
   {% if accounts %}
   <p class="muted">Accounts are created when you import a file. Set the owner to <em>shared</em> or a person's name.
-    Untick "in totals" to keep an account out of the overview. For comdirect, add the IBAN by hand: it isn't in
-    the export, and it's needed to spot transfers between your own accounts.</p>
+    Use the owner <em>side-business</em> and untick "in totals" for the side business. comdirect exports have no IBAN:
+    Kasboek finds it from transfers between your own accounts. If it's still empty, add it by hand, because it's
+    needed to spot those transfers.</p>
   <table>
     {% for a in accounts %}{% include "_account_row.html" %}{% endfor %}
   </table>

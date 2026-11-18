@@ -79,6 +79,7 @@ def test_manual_category_survives_rules_and_reimport(con):
     ah = tx_id(con, "Albert Heijn")
     store.set_category(con, ah, "gifts")
     store.add_rule(con, match_text="albert heijn", field="any", category="shopping")
+    store.save_llm_guesses(con, {("albert heijn klimmen", "out"): "health"})
     imp(con, "rabobank.csv")
     assert cat_of(con, "Albert Heijn") == ("gifts", "manual")
 
@@ -86,16 +87,20 @@ def test_manual_category_survives_rules_and_reimport(con):
 def test_make_rule_from_a_transaction(con):
     imp(con, "rabobank.csv")
     ah = tx_id(con, "Albert Heijn")
-    store.set_category(con, ah, "eating_out", make_rule=True)
+    store.set_category(con, ah, "eating_out")
+    assert store.suggest_rule(con, ah) == "albert heijn"
+    rid, hits = store.rule_from_tx(con, ah, "albert heijn", "eating_out")
     [rule] = store.rules(con)
-    assert rule["match_text"] == "albert heijn klimmen" and rule["field"] == "counterparty"
+    assert rule["match_text"] == "albert heijn" and rule["field"] == "any"
     assert rule["direction"] == "out" and rule["category_key"] == "eating_out"
-    # a new AH row in the same town now goes through the rule
+    assert hits == 1 and rule["hits"] == 1
+    # a new AH row in another town now goes through the rule
     acc = con.execute("SELECT id FROM accounts").fetchone()["id"]
-    imp(con, "c.csv", data=b"Datum;Bedrag;Naam\n20-10-2026;-5,00;ALBERT HEIJN 1234 KLIMMEN\n", account_id=acc)
+    imp(con, "c.csv", data=b"Datum;Bedrag;Naam\n20-10-2026;-5,00;ALBERT HEIJN 9876 HEERLEN\n", account_id=acc)
     assert con.execute("SELECT cat_source FROM transactions WHERE date='2026-10-20'").fetchone()[0] == "rule"
     store.delete_rule(con, rule["id"])
-    assert con.execute("SELECT cat_source FROM transactions WHERE date='2026-10-20'").fetchone()[0] == "memory"
+    # without the rule, the other branch still gets it from the learned chain
+    assert con.execute("SELECT cat_source FROM transactions WHERE date='2026-10-20'").fetchone()[0] == "chain"
 
 
 def test_queue_holds_default_rows_and_confirm_takes_them_out(con):
@@ -150,3 +155,38 @@ def test_queue_groups_by_merchant(con):
     store.set_category(con, groups[0]["tx_id"], "gifts")
     assert [g["merchant"] for g in store.queue_groups(con)] == ["kiosk zuid"]
     assert store.queue_count(con) == 1
+
+
+def test_iban_memory_and_chain_through_the_db(con):
+    acc = store.create_account(con, name="Test", bank="")
+    csv = ("Datum;Bedrag;Naam;Tegenrekening\n"
+           "01-10-2026;-40,00;J. Smit;NL00INGB0000000007\n"
+           "08-10-2026;-40,00;Jolanda Smit;NL00INGB0000000007\n"
+           "02-10-2026;-60,00;Garage Jansen Heerlen;\n"
+           "09-10-2026;-80,00;Garage Jansen Sittard;\n").encode()
+    imp(con, "s.csv", data=csv, account_id=acc)
+    store.set_category(con, tx_id(con, "J. Smit"), "kids")
+    store.set_category(con, tx_id(con, "Jansen Heerlen"), "car")
+    assert cat_of(con, "Jolanda") == ("kids", "iban")
+    assert cat_of(con, "Jansen Sittard") == ("car", "chain")
+
+
+def test_ai_guesses_are_stored_shown_in_queue_and_confirmable(con):
+    acc = store.create_account(con, name="Test", bank="")
+    imp(con, "s.csv", data=b"Datum;Bedrag;Naam\n01-10-2026;-15,00;Zaak X\n", account_id=acc)
+    store.save_llm_guesses(con, {("zaak x", "out"): "hobbies", ("zaak x", "in"): "not_a_category"})
+    assert cat_of(con, "Zaak X") == ("hobbies", "llm")
+    assert store.queue_count(con) == 1                 # an AI guess still needs a yes from you
+    store.confirm(con, tx_id(con, "Zaak X"))
+    assert cat_of(con, "Zaak X") == ("hobbies", "manual") and store.queue_count(con) == 0
+
+
+def test_unsure_merchants_for_ai_are_grouped_and_private(con):
+    acc = store.create_account(con, name="Test", bank="")
+    csv = ("Datum;Bedrag;Naam;Omschrijving;Tegenrekening\n"
+           "01-10-2026;-12,34;Zaak X;bestelling 1;NL00INGB0000000007\n"
+           "02-10-2026;-15,10;Zaak X;bestelling 2;NL00INGB0000000007\n").encode()
+    imp(con, "s.csv", data=csv, account_id=acc)
+    [item] = store.unsure_for_llm(con)
+    assert item["key"] == ("zaak x", "out") and item["count"] == 2
+    assert "NL00" not in str(item)                     # no IBANs leave the app

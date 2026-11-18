@@ -4,13 +4,15 @@
 {% block content %}
 <h1>Rules</h1>
 {% if error %}<div class="error card">{{ error }}</div>{% endif %}
-<p class="muted">A rule sets the category of every transaction it matches, unless you set that transaction's
-  category by hand. All conditions must hold. When two rules match, the newest one wins.</p>
+<p class="muted">You don't need rules for most things: when you pick a category, Kasboek already remembers that
+  shop (and other branches of the same chain, and the same IBAN). A rule is for names that vary, for example
+  "every name containing <em>tikkie</em>", or for amount or direction conditions. A rule never changes a category
+  you set by hand. All conditions must hold. When two rules match, the newest one wins.</p>
 
 <div class="card">
   {% if rules %}
   <table>
-    <tr><th>When</th><th>Then</th><th></th></tr>
+    <tr><th>When</th><th>Then</th><th class="num">Matches</th><th></th></tr>
     {% for r in rules %}
     <tr>
       <td>{{ field_label(r.field) }} contains <strong>{{ r.match_text }}</strong>
@@ -18,12 +20,13 @@
         {% if r.amount_min is not none %} · at least {{ r.amount_min|eur }}{% endif %}
         {% if r.amount_max is not none %} · at most {{ r.amount_max|eur }}{% endif %}</td>
       <td>{{ r.category_label }}</td>
+      <td class="num">{{ r.hits }}</td>
       <td><form method="post" action="/rules/{{ r.id }}/delete"><button class="link" type="submit">delete</button></form></td>
     </tr>
     {% endfor %}
   </table>
   {% else %}
-  <p>No rules yet. Make one here, or tick <em>rule</em> when you change a category on the Transactions page.</p>
+  <p>No rules yet. Make one here, or use "Apply to every name containing…" after you change a category.</p>
   {% endif %}
 </div>
 

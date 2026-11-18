@@ -9,3 +9,13 @@
   {% endfor %}
 </select>
 {% endmacro %}
+
+{# The follow-up offered after you set a category: turn it into a rule for every name containing a text. #}
+{% macro rule_offer(text, category_key, category_label) %}
+<span class="muted">Apply to every name containing</span>
+<input name="match_text" value="{{ text }}" size="18" aria-label="Text the name must contain">
+<input type="hidden" name="category" value="{{ category_key }}">
+<span class="muted">→ {{ category_label }}</span>
+<button type="submit">Make rule</button>
+<span class="muted" title="Without a rule, Kasboek already remembers this exact shop (and other branches of the same chain). A rule also catches names that only contain the text, and you can delete it on the Rules page.">ⓘ</span>
+{% endmacro %}

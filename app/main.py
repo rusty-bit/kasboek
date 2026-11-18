@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app import db, store
+from app import db, llm, store
 from app.fmt import eur
 from app.importers import parse_statement
 
@@ -22,7 +22,8 @@ templates.env.globals["bank_label"] = store.bank_label
 templates.env.globals["kinds"] = store.KINDS
 
 SOURCE_LABELS = {"manual": "set by you", "transfer": "own transfer", "rule": "rule", "memory": "learned",
-                 "keyword": "keyword", "llm": "AI guess", "default": "unsure"}
+                 "iban": "learned (same IBAN)", "chain": "learned (same chain)", "keyword": "keyword",
+                 "mcc": "shop type from bank", "llm": "AI guess", "default": "unsure"}
 templates.env.globals["source_label"] = lambda s: SOURCE_LABELS.get(s or "", s or "")
 FIELD_LABELS = {"any": "name or description", "counterparty": "name", "description": "description", "iban": "IBAN"}
 templates.env.globals["field_label"] = lambda f: FIELD_LABELS.get(f, f)
@@ -162,16 +163,32 @@ def transactions_page(request: Request, month: str = "", account: str = "", owne
             "total_in": total_in, "total_out": total_out}, con=con)
 
 
-def _tx_row(request, con, tx_id, note=None):
-    return render(request, "_tx_row.html", {"t": store.transaction(con, tx_id), "note": note}, con=con)
+def _tx_row(request, con, tx_id, **ctx):
+    return render(request, "_tx_row.html", {"t": store.transaction(con, tx_id), **ctx}, con=con)
+
+
+def _saved_note(changed):
+    if not changed:
+        return "Saved."
+    return f"Saved. Also used for {changed} other {'row' if changed == 1 else 'rows'} from this shop."
 
 
 @app.post("/transactions/{tx_id}/category")
-def tx_set_category(request: Request, tx_id: int, category: str = Form(...), make_rule: str = Form("")):
+def tx_set_category(request: Request, tx_id: int, category: str = Form(...)):
     with db.db() as con:
-        changed = store.set_category(con, tx_id, category, make_rule=bool(make_rule))
-        note = f"Also updated {changed} other rows from this merchant." if changed else None
-        return _tx_row(request, con, tx_id, note)
+        changed = store.set_category(con, tx_id, category)
+        return _tx_row(request, con, tx_id, note=_saved_note(changed), offer=store.suggest_rule(con, tx_id))
+
+
+@app.post("/transactions/{tx_id}/rule")
+def tx_make_rule(request: Request, tx_id: int, match_text: str = Form(""), category: str = Form(...)):
+    with db.db() as con:
+        try:
+            _, hits = store.rule_from_tx(con, tx_id, match_text, category)
+        except ValueError as e:
+            return _tx_row(request, con, tx_id, note=str(e))
+        return _tx_row(request, con, tx_id, note=f"Rule saved: it matches {hits} "
+                                                 f"{'transaction' if hits == 1 else 'transactions'}.")
 
 
 @app.post("/transactions/{tx_id}/confirm")
@@ -184,19 +201,76 @@ def tx_confirm(request: Request, tx_id: int):
 # --- "Is this right?" queue -----------------------------------------------------------------------
 QUEUE_PAGE = 100
 
+AI_BATCH = 60   # merchants per click: about a minute on a small local model
+
+
+def _queue_page(request, con, status=200, **ctx):
+    groups = store.queue_groups(con)
+    return render(request, "queue.html", {
+        "page": "queue", "groups": groups[:QUEUE_PAGE], "more": max(0, len(groups) - QUEUE_PAGE),
+        "groups_total": sum(1 for g in groups if g["cat_source"] == "default"), "ai_batch": AI_BATCH,
+        "llm_url": db.setting(con, "llm_base_url", ""), "llm_model": db.setting(con, "llm_model", ""),
+        "rule_hits": -1, **ctx}, status, con)
+
+
 @app.get("/queue")
-def queue_page(request: Request):
+def queue_page(request: Request, saved: int = 0, n: int = 0, rule_hits: int = -1, ai: int = -1):
     with db.db() as con:
-        groups = store.queue_groups(con)
-        return render(request, "queue.html", {"page": "queue", "groups": groups[:QUEUE_PAGE],
-                                              "more": max(0, len(groups) - QUEUE_PAGE)}, con=con)
+        last = None
+        if saved:
+            try:
+                last = {"t": store.transaction(con, saved), "changed": n, "offer": store.suggest_rule(con, saved)}
+            except ValueError:
+                last = None
+        message = None
+        if ai >= 0:
+            message = (f"The AI suggested a category for {ai} {'merchant' if ai == 1 else 'merchants'}. "
+                       "Check them below: 'Yes, save' confirms, or pick another category.") if ai else \
+                "The AI wasn't sure about any of these merchants."
+        return _queue_page(request, con, last=last, rule_hits=rule_hits, message=message)
+
+
+@app.post("/queue/ask-ai")
+def queue_ask_ai(request: Request):
+    with db.db() as con:
+        url, model = db.setting(con, "llm_base_url", ""), db.setting(con, "llm_model", "")
+        items = store.unsure_for_llm(con, limit=AI_BATCH)
+        cats = store.categories(con)
+    try:
+        guesses = llm.suggest(items, cats, base_url=url, model=model) if items else {}
+    except llm.LLMError as e:
+        with db.db() as con:
+            return _queue_page(request, con, 400, error=str(e))
+    with db.db() as con:
+        store.save_llm_guesses(con, guesses)
+    return RedirectResponse(f"/queue?ai={len(guesses)}", status_code=303)
+
+
+@app.post("/settings/llm")
+def settings_llm(request: Request, llm_base_url: str = Form(""), llm_model: str = Form("")):
+    url, model = llm_base_url.strip(), llm_model.strip()
+    if url and not llm.is_local_url(url):
+        with db.db() as con:
+            return _queue_page(request, con, 400, error="That address isn't on your own network. Kasboek only "
+                                                        "talks to a local AI model (for example http://aibox:11434/v1).")
+    with db.db() as con:
+        db.set_setting(con, "llm_base_url", url)
+        db.set_setting(con, "llm_model", model)
+    return RedirectResponse("/queue", status_code=303)
 
 
 @app.post("/queue/assign")
-def queue_assign(tx_id: int = Form(...), category: str = Form(...), make_rule: str = Form("")):
+def queue_assign(tx_id: int = Form(...), category: str = Form(...)):
     with db.db() as con:
-        store.set_category(con, tx_id, category, make_rule=bool(make_rule))
-    return RedirectResponse("/queue", status_code=303)
+        changed = store.set_category(con, tx_id, category)
+    return RedirectResponse(f"/queue?saved={tx_id}&n={changed}", status_code=303)
+
+
+@app.post("/queue/rule")
+def queue_rule(tx_id: int = Form(...), match_text: str = Form(""), category: str = Form(...)):
+    with db.db() as con:
+        _, hits = store.rule_from_tx(con, tx_id, match_text, category)
+    return RedirectResponse(f"/queue?rule_hits={hits}", status_code=303)
 
 
 # --- rules ----------------------------------------------------------------------------------------

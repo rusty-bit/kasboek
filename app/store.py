@@ -3,7 +3,8 @@ import logging
 import sqlite3
 from collections import OrderedDict
 
-from app.categorize import Rule, categorize_all, direction, merchant_text, norm_text, normalize_merchant
+from app.categorize import (Rule, categorize_all, direction, memory_keys, merchant_text, norm_text,
+                            normalize_merchant, rule_matches, suggest_rule_text)
 from app.importers import dedupe_keys, group_key
 from app.transfers import infer_ibans
 
@@ -135,7 +136,7 @@ def update_account(con, account_id, name, kind, owner, included, iban=None):
 
 # --- categorisation (DB glue around app/categorize.py) --------------------------------------------
 TX_COLS = ("SELECT t.id, t.date, t.amount, t.counterparty, t.description, t.counterparty_iban, t.account_id,"
-           " t.cat_source, c.key AS category_key, c.label AS category_label, c.key AS category,"
+           " t.cat_source, t.mcc, t.source, c.key AS category_key, c.label AS category_label, c.key AS category,"
            " a.name AS account_name, a.owner"
            " FROM transactions t JOIN accounts a ON a.id = t.account_id"
            " LEFT JOIN categories c ON c.id = t.category_id")
@@ -153,10 +154,12 @@ def _context(con):
     own = {r["iban"] for r in con.execute("SELECT iban FROM accounts WHERE iban IS NOT NULL AND iban != ''")}
     rules_ = [Rule(id=r["id"], match_text=r["match_text"], category=r["category_key"], field=r["field"],
                    direction=r["direction"], amount_min=r["amount_min"], amount_max=r["amount_max"])
-              for r in rules(con)]
+              for r in rules(con, with_hits=False)]
     memory = {(r["norm"], r["direction"]): r["key"] for r in con.execute(
         "SELECT m.norm, m.direction, c.key FROM merchant_memory m JOIN categories c ON c.id = m.category_id")}
-    return dict(own_ibans=own, rules=rules_, memory=memory)
+    llm = {(r["norm"], r["direction"]): r["key"] for r in con.execute(
+        "SELECT g.norm, g.direction, c.key FROM llm_guesses g JOIN categories c ON c.id = g.category_id")}
+    return dict(own_ibans=own, rules=rules_, memory=memory, llm=llm)
 
 
 def recategorize(con):
@@ -180,27 +183,76 @@ def transaction(con, tx_id):
 
 
 def _remember(con, t, cat_id):
-    norm = normalize_merchant(merchant_text(t))
-    if norm:
+    """Remember under the merchant name and, for a direct counterparty, its IBAN (see memory_keys)."""
+    for norm, d in memory_keys(t):
         con.execute("INSERT INTO merchant_memory(norm, direction, category_id) VALUES (?,?,?)"
                     " ON CONFLICT(norm, direction) DO UPDATE SET category_id=excluded.category_id, hits=hits+1",
-                    (norm, direction(t), cat_id))
+                    (norm, d, cat_id))
 
 
-def set_category(con, tx_id, category_key, make_rule=False):
+def set_category(con, tx_id, category_key):
     """Set a category by hand: never overwritten later. Teaches merchant memory, which then applies to
-    this merchant's other (non-manual) rows, past and future. make_rule also saves a rule."""
+    this merchant's other (non-manual) rows, past and future. Returns how many other rows changed."""
     t = transaction(con, tx_id)
     cid = _cat_id(con, category_key)
     con.execute("UPDATE transactions SET category_id=?, cat_source='manual' WHERE id=?", (cid, tx_id))
     _remember(con, t, cid)
-    if make_rule:
-        field = "counterparty" if (t["counterparty"] or "").strip() and merchant_text(t) == t["counterparty"].strip() \
-            else "description"
-        match = normalize_merchant(merchant_text(t))
-        if match:
-            add_rule(con, match_text=match, field=field, category=category_key, direction=direction(t))
     return recategorize(con)
+
+
+def suggest_rule(con, tx_id):
+    return suggest_rule_text(transaction(con, tx_id))
+
+
+def rule_from_tx(con, tx_id, match_text, category_key):
+    """'Apply to every name containing …': a rule in the row's direction. Returns (rule id, rows it matches)."""
+    t = transaction(con, tx_id)
+    rid = add_rule(con, match_text=match_text, field="any", category=category_key, direction=direction(t))
+    return rid, next(r["hits"] for r in rules(con) if r["id"] == rid)
+
+
+def save_llm_guesses(con, guesses):
+    """Store AI guesses {(normalized merchant, direction): category key}. Unknown keys are dropped."""
+    ids = {r["key"]: r["id"] for r in con.execute("SELECT id, key FROM categories")}
+    rows = [(norm, d, ids[cat]) for (norm, d), cat in guesses.items() if cat in ids]
+    con.executemany("INSERT INTO llm_guesses(norm, direction, category_id) VALUES (?,?,?)"
+                    " ON CONFLICT(norm, direction) DO UPDATE SET category_id=excluded.category_id", rows)
+    recategorize(con)
+    return len(rows)
+
+
+def unsure_for_llm(con, limit=200):
+    """Merchants still marked unsure, one item per merchant + direction, with only what a local model needs:
+    the name, a short description, money in/out, a rounded typical amount. No IBANs, no account names."""
+    groups = {}
+    for t in transactions(con, limit=1_000_000):
+        if t["cat_source"] != "default":
+            continue
+        key = (normalize_merchant(merchant_text(t)), direction(t))
+        if not key[0]:
+            continue
+        g = groups.setdefault(key, {"key": key, "name": merchant_text(t)[:60], "amounts": [],
+                                    "description": (t["description"] or "")[:80] if t["counterparty"] else "",
+                                    "count": 0})
+        g["count"] += 1
+        g["amounts"].append(abs(t["amount"]))
+    out = []
+    for g in sorted(groups.values(), key=lambda g: -g["count"])[:limit]:
+        amounts = sorted(g.pop("amounts"))
+        g["typical_amount"] = round_amount(amounts[len(amounts) // 2])
+        out.append(g)
+    return out
+
+
+def round_amount(v):
+    """Coarse amounts for the AI prompt (broke's privacy.ts idea): enough to tell a coffee from rent."""
+    if v < 10:
+        return round(v)
+    if v < 100:
+        return int(round(v / 5) * 5)
+    if v < 1000:
+        return int(round(v / 25) * 25)
+    return int(round(v / 100) * 100)
 
 
 def confirm(con, tx_id):
@@ -227,10 +279,20 @@ def delete_rule(con, rule_id):
     recategorize(con)
 
 
-def rules(con):
-    return [dict(r) for r in con.execute(
+def rules(con, with_hits=True):
+    """All rules, newest first. hits = how many transactions each rule matches (hand-set ones included;
+    the rule leaves those as they are)."""
+    out = [dict(r) for r in con.execute(
         "SELECT r.*, c.key AS category_key, c.label AS category_label"
         " FROM rules r JOIN categories c ON c.id = r.category_id ORDER BY r.id DESC")]
+    if with_hits and out:
+        objs = [Rule(id=r["id"], match_text=r["match_text"], category=r["category_key"], field=r["field"],
+                     direction=r["direction"], amount_min=r["amount_min"], amount_max=r["amount_max"]) for r in out]
+        rows = [dict(r) for r in con.execute(
+            "SELECT amount, counterparty, description, counterparty_iban FROM transactions")]
+        for r, o in zip(out, objs):
+            r["hits"] = sum(1 for t in rows if rule_matches(o, t))
+    return out
 
 
 def categories(con):
