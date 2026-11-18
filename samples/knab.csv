@@ -1,0 +1,4 @@
+KNAB EXPORT;;;;;;;;;;;;;;;
+Rekeningnummer;Transactiedatum;Valutacode;CreditDebet;Bedrag;Tegenrekeningnummer;Tegenrekeninghouder;Valutadatum;Betaalwijze;Omschrijving;Type betaling;Machtigingsnummer;Incassant ID;Adres;Referentie;Boekdatum
+NL00KNAB0123456789;03-10-2026;EUR;D;12,99;NL00ABNA0000000003;Netflix International B.V.;03-10-2026;Incasso;Netflix maandabonnement;Incasso;M123;NL00ZZZ;;REF-K-1;03-10-2026
+NL00KNAB0123456789;05-10-2026;EUR;C;250,00;NL00RABO0123456789;D Rust;05-10-2026;Overboeking;Spaarpot vakantie;Overboeking;;;;REF-K-2;05-10-2026

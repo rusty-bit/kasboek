@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Overview</h1>
+{% if tx_count == 0 %}
+<div class="card">
+  <h2>Import your first statement</h2>
+  <p class="muted">There is nothing here yet. Download a CSV or CAMT.053 export from Rabobank, Knab or comdirect and import it.</p>
+  <a class="btn" href="/import">Go to import</a>
+</div>
+{% else %}
+<div class="card">
+  <p>{{ tx_count }} transactions imported. Free to spend, forecast and bills arrive in later milestones.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"><BkToCstmrStmt><Stmt>
+<Acct><Id><IBAN>NL00KNAB0123456789</IBAN></Id></Acct>
+<Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">987.65</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-10-31</Dt></Dt></Bal>
+<Ntry><Amt Ccy="EUR">45.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts>BOOK</Sts><BookgDt><Dt>2026-10-10</Dt></BookgDt><AcctSvcrRef>C-1</AcctSvcrRef>
+<NtryDtls><TxDtls><RltdPties><Cdtr><Nm>Ziggo Services BV</Nm></Cdtr><CdtrAcct><Id><IBAN>NL00ZIGG0000000004</IBAN></Id></CdtrAcct></RltdPties><RmtInf><Ustrd>Internet oktober</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>
+</Stmt></BkToCstmrStmt></Document>

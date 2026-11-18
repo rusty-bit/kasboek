@@ -1,0 +1,30 @@
+# Kasboek on the NAS, deployed as a Portainer stack.
+# All bind mounts MUST be absolute paths under /volume2/Docker/kasboek. A relative path lands on the
+# 1.8 GB rootfs and can take the NAS down. Create the folder first:
+#   mkdir -p /volume2/Docker/kasboek/data && chown 1000:1000 /volume2/Docker/kasboek/data
+services:
+  kasboek:
+    build: .
+    image: kasboek:0.1.0
+    container_name: kasboek
+    restart: unless-stopped
+    env_file: stack.env
+    environment:
+      DATA_DIR: /data
+      TZ: Europe/Amsterdam
+    volumes:
+      - /volume2/Docker/kasboek/data:/data
+    ports:
+      - "8420:8000"
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 60s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

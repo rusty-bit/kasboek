@@ -1,0 +1,11 @@
+data/
+*.db
+*.db-*
+*.pem
+.env
+stack.env
+__pycache__/
+.pytest_cache/
+input/
+venv/
+.venv/

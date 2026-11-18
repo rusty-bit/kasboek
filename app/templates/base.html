@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Kasboek{% endblock %}</title>
+  <script src="/static/htmx.min.js"></script>
+  <style>
+    :root { --bg:#f6f5f1; --card:#fff; --ink:#1d2b2f; --muted:#6b7a7e; --line:#e2e0d8; --accent:#2f6b5a; --warn:#a45a00; --bad:#b3261e; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+    header { background:var(--ink); color:#fff; padding:0 16px; }
+    header nav { max-width:1000px; margin:0 auto; display:flex; gap:20px; align-items:center; height:52px; }
+    header a { color:#cfe0db; text-decoration:none; }
+    header a.on, header a:hover { color:#fff; }
+    header .brand { font-weight:700; color:#fff; margin-right:12px; }
+    main { max-width:1000px; margin:24px auto; padding:0 16px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:18px; }
+    h1 { font-size:22px; margin:0 0 16px; } h2 { font-size:17px; margin:0 0 12px; }
+    .muted { color:var(--muted); }
+    .warn { color:var(--warn); } .bad { color:var(--bad); }
+    .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .neg { color:var(--bad); }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
+    th { font-size:13px; color:var(--muted); font-weight:600; }
+    input, select, button { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+    button, .btn { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; text-decoration:none; padding:6px 12px; border-radius:6px; display:inline-block; }
+    .notice { border-left:4px solid var(--warn); background:#fff8ec; padding:10px 14px; border-radius:6px; }
+    .error { border-left:4px solid var(--bad); background:#fdeeed; padding:10px 14px; border-radius:6px; }
+    .ok { border-left:4px solid var(--accent); background:#eef6f3; padding:10px 14px; border-radius:6px; }
+    .table-wrap { overflow-x:auto; }
+  </style>
+</head>
+<body>
+<header><nav>
+  <span class="brand">Kasboek</span>
+  <a href="/" class="{{ 'on' if page == 'overview' }}">Overview</a>
+  <a href="/import" class="{{ 'on' if page == 'import' }}">Import</a>
+  <a href="/accounts" class="{{ 'on' if page == 'accounts' }}">Accounts</a>
+</nav></header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

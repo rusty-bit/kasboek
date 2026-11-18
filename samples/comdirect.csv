@@ -1,0 +1,8 @@
+"Umsätze Girokonto";"Zeitraum: 30 Tage";
+"Neuer Kontostand";"1.234,56 EUR";
+
+"Buchungstag";"Wertstellung (Valuta)";"Vorgang";"Buchungstext";"Umsatz in EUR";
+"offen";"--";"Lastschrift / Belastung";"Empfänger: REWE Markt GmbH Buchungstext: REWE SAGT DANKE";"-23,10";
+"06.10.2026";"06.10.2026";"Lastschrift / Belastung";"Empfänger: Spotify AB Kto/IBAN: DE00500000000000000000 BLZ/BIC: XXXX Buchungstext: Spotify Premium Ref. 123";"-10,99";
+"08.10.2026";"08.10.2026";"Übertrag / Überweisung";"Auftraggeber: Familienkasse Buchungstext: Kindergeld 10/2026";"255,00";
+"Alter Kontostand";"1.000,00 EUR";
