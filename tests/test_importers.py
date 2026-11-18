@@ -41,3 +41,82 @@ def test_dedupe_stable():
     a = dedupe_keys(load("knab.csv")[0], 1)
     b = dedupe_keys(load("knab.csv")[0], 1)
     assert [r["dedupe_key"] for r in a] == [r["dedupe_key"] for r in b]
+
+
+# --- M1: comdirect multi-section export, balances, bank detection ---------------------------------
+from app.importers import parse_statement, bank_from_iban
+
+
+def test_comdirect_multi_section_splits_accounts_and_skips_depot():
+    st = parse_statement("umsaetze_1234567890_20261101-1200.csv", (S / "comdirect_multi.csv").read_bytes())
+    giro = [r for r in st["rows"] if r["section"] == "Girokonto"]
+    tg = [r for r in st["rows"] if r["section"] == "Tagesgeld PLUS-Konto"]
+    assert len(giro) == 7 and len(tg) == 2          # 'offen' skipped, depot not mixed in
+    assert len(st["rows"]) == 9
+    assert st["skipped_sections"] == ["Depot"]
+    assert max(abs(r["amount"]) for r in st["rows"]) == 3500.0
+    assert st["account_hint"] == "1234567890"
+    assert st["bank"] == "comdirect"
+
+
+def test_comdirect_balances_per_section():
+    st = parse_statement("x.csv", (S / "comdirect_multi.csv").read_bytes())
+    # 'Neuer Kontostand' is the balance at the newest booking in that section
+    assert st["balances"]["Girokonto"] == (1536.25, "2026-10-30")
+    assert st["balances"]["Tagesgeld PLUS-Konto"] == (10500.0, "2026-10-31")
+
+
+def test_comdirect_ref_and_parts():
+    st = parse_statement("x.csv", (S / "comdirect_multi.csv").read_bytes())
+    r = {x["ref"]: x for x in st["rows"]}
+    spotify = r["6C2C26301DEF5678/2"]
+    assert spotify["counterparty"] == "Spotify AB" and spotify["description"] == "Spotify Premium"
+    assert spotify["counterparty_iban"] == "DE00500000000000000000"
+    ah = r["3K2C26303ABC1234/12345"]
+    assert ah["description"].startswith("ALBERT HEIJN 1234") and "Ref." not in ah["description"]
+    fee = r["9C2C26273PQR1111/1"]
+    assert fee["amount"] == -4.9 and fee["description"] == "Abschluss"
+    assert all(x["ref"] for x in st["rows"])
+
+
+def test_rabobank_balance_from_saldo_column():
+    st = parse_statement("rabobank.csv", (S / "rabobank.csv").read_bytes())
+    assert st["balances"]["NL00RABO0123456789"] == (5545.70, "2026-10-25")
+    assert st["bank"] == "rabobank"
+
+
+def test_camt_via_parse_statement():
+    st = parse_statement("camt053.xml", (S / "camt053.xml").read_bytes())
+    assert st["balances"]["NL00KNAB0123456789"] == (987.65, "2026-10-31")
+    assert st["rows"][0]["section"] == ""
+
+
+def test_bank_from_iban():
+    assert bank_from_iban("NL00RABO0123456789") == "rabobank"
+    assert bank_from_iban("NL00KNAB0123456789") == "knab"
+    assert bank_from_iban("DE00200411110000000001") == "comdirect"
+    assert bank_from_iban("NL00INGB0000000001") == "ing"
+    assert bank_from_iban("") is None
+
+
+def test_comdirect_transfer_without_buchungstext_label():
+    st = parse_statement("x.csv", (S / "comdirect_multi.csv").read_bytes())
+    jan = next(r for r in st["rows"] if r["ref"] == "4F2C26298YZA4444/1")
+    assert jan["counterparty"] == "Jan Jansen"
+    assert jan["counterparty_iban"] == "NL00INGB0000000005"
+    assert jan["description"] == "Übertrag / Überweisung - Echtzeit"
+    assert not any("Ref." in r["description"] or "Kto/IBAN" in r["description"] for r in st["rows"])
+
+
+def test_comdirect_reconciles_opening_plus_bookings_to_closing():
+    st = parse_statement("x.csv", (S / "comdirect_multi.csv").read_bytes())
+    giro = st["checks"]["Girokonto"]
+    assert giro == {"opening": -1123.56, "closing": 1536.25, "booked": 2659.81, "ok": True}
+    assert st["checks"]["Tagesgeld PLUS-Konto"]["ok"] is True
+
+
+def test_comdirect_cut_off_export_is_flagged():
+    # comdirect stops at 500 bookings per account: the oldest rows go missing and the balances no longer add up
+    data = (S / "comdirect_multi.csv").read_bytes().replace(b'"-1.123,56 EUR"', b'"-2.000,00 EUR"')
+    giro = parse_statement("x.csv", data)["checks"]["Girokonto"]
+    assert giro["ok"] is False

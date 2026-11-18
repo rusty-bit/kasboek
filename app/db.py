@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   source TEXT NOT NULL DEFAULT 'file',         -- file | enablebanking
   eb_uid TEXT,
   eb_session TEXT,
-  included INTEGER NOT NULL DEFAULT 1
+  included INTEGER NOT NULL DEFAULT 1,
+  ext_key TEXT                                 -- account identity for files without an IBAN, e.g. comdirect:<nr>:Girokonto
 );
 CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY,
@@ -185,9 +186,24 @@ def db():
         con.close()
 
 
+# Columns added after the first schema. CREATE TABLE IF NOT EXISTS does not add them to an existing DB.
+MIGRATIONS = [
+    ("accounts", "ext_key", "TEXT"),
+]
+
+
+def migrate(con):
+    for table, col, decl in MIGRATIONS:
+        cols = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    con.execute("CREATE UNIQUE INDEX IF NOT EXISTS accounts_ext_key ON accounts(ext_key)")
+
+
 def init():
     with db() as con:
         con.executescript(SCHEMA)
+        migrate(con)
         for key, label, kind, ess, every in CATEGORIES:
             con.execute(
                 "INSERT OR IGNORE INTO categories(key,label,kind,essential,everyday) VALUES (?,?,?,?,?)",

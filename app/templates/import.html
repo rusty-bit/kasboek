@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Import · Kasboek{% endblock %}
+{% block content %}
+<h1>Import a statement</h1>
+
+{% if error %}<div class="error card">{{ error }}</div>{% endif %}
+
+{% if report %}
+<div class="card">
+  <h2>Imported {{ filename }}</h2>
+  {% for g in report %}
+  <div class="{{ 'ok' if g.check is none or g.check.ok else 'notice' }}" style="margin-bottom:12px">
+    <strong>{{ g.account_name }}</strong>: {{ g.added }} new, {{ g.existing }} already imported
+    <span class="muted">({{ g.first }} to {{ g.last }})</span>
+    {% if g.check and not g.check.ok %}
+    <p style="margin:6px 0 0">The bank's balances don't add up: start {{ g.check.opening|eur }} + bookings
+      {{ g.check.booked|eur }} should be {{ g.check.closing|eur }}. The export was probably cut off and older
+      bookings are missing (comdirect exports at most about 500 per account). Export the earlier period
+      separately and import that too. Rows you already have are skipped.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if skipped %}<p class="muted">Skipped: {{ skipped|join(", ") }} (securities are not tracked).</p>{% endif %}
+
+  {% for g in report %}
+  <h2 style="margin-top:18px">Newest rows in {{ g.account_name }}</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Date</th><th>Name</th><th>Description</th><th class="num">Amount</th></tr>
+    {% for r in g.sample %}
+    <tr><td>{{ r.date }}</td><td>{{ r.counterparty }}</td><td class="muted">{{ r.description[:70] }}</td>
+      <td class="num {{ 'neg' if r.amount < 0 }}">{{ r.amount|eur }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endfor %}
+  <p><a href="/accounts">Check the accounts</a></p>
+</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/import" enctype="multipart/form-data">
+    <p><label>Statement file (CSV or CAMT.053 XML)<br>
+      <input type="file" name="file" accept=".csv,.txt,.xml" required></label></p>
+    <p><label>Account<br>
+      <select name="account_id">
+        <option value="">Detect from file</option>
+        {% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+      </select></label>
+      <br><span class="muted">Only needed for files without an account number. If the account isn't listed yet,
+      <a href="/accounts#new">add it first</a>.</span></p>
+    <button type="submit">Import</button>
+  </form>
+</div>
+
+<div class="notice">
+  Use one format per account: either CSV or CAMT.053, not both. The two formats carry different references,
+  so the same period imported in both formats would be counted twice.
+</div>
+<p class="muted">Importing the same file again is safe: rows that are already there are skipped.
+  Pending ("offen") bookings are left out until they're booked.</p>
+{% endblock %}

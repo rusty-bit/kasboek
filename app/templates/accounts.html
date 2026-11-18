@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Accounts · Kasboek{% endblock %}
+{% block content %}
+<h1>Accounts</h1>
+{% if error %}<div class="error card">{{ error }}</div>{% endif %}
+
+<div class="card">
+  {% if accounts %}
+  <p class="muted">Accounts are created when you import a file. Set the owner to <em>shared</em> or a person's name.
+    Untick "in totals" to keep an account out of the overview. For comdirect, add the IBAN by hand: it isn't in
+    the export, and it's needed to spot transfers between your own accounts.</p>
+  <table>
+    {% for a in accounts %}{% include "_account_row.html" %}{% endfor %}
+  </table>
+  <datalist id="owners"><option value="shared">{% for o in accounts|map(attribute='owner')|unique %}<option value="{{ o }}">{% endfor %}</datalist>
+  {% else %}
+  <p>No accounts yet. <a href="/import">Import a statement</a> and they appear here.</p>
+  {% endif %}
+</div>
+
+<div class="card" id="new">
+  <h2>Add an account by hand</h2>
+  <p class="muted">Only needed for files that have no account number in them.</p>
+  <form method="post" action="/accounts/new">
+    <input name="name" placeholder="Name" required>
+    <select name="kind">{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+    <input name="owner" value="shared" size="10">
+    <input name="iban" placeholder="IBAN (optional)" size="24">
+    <button type="submit">Add</button>
+  </form>
+</div>
+{% endblock %}

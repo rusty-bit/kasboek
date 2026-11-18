@@ -71,7 +71,11 @@ Feature ideas are taken from Finanzguru, Rocket Money and the open-source **brok
 ### File formats (verify against real exports, see §8)
 - **Rabobank CSV**: comma-separated, quoted, amount `+1,23` / `-12,30`. Columns include `IBAN/BBAN, Volgnr, Datum, Bedrag, Tegenrekening IBAN/BBAN, Naam tegenpartij, Omschrijving-1..3`. `Volgnr` = dedupe ref.
 - **Knab CSV**: semicolon-separated, positive amount plus a `CreditDebet` D/C column, `Tegenrekeninghouder`, `Omschrijving`, `Referentie`.
-- **comdirect CSV**: cp1252 encoding, preamble lines, `Buchungstag;Wertstellung;Vorgang;Buchungstext;Umsatz in EUR`. `Buchungstext` packs `Auftraggeber:/Empfänger: … Kto/IBAN: … Buchungstext: …` together. Pending rows say `offen`.
+- **comdirect CSV**: cp1252 encoding, preamble lines, `Buchungstag;Wertstellung;Vorgang;Buchungstext;Umsatz in EUR`. `Buchungstext` packs `Auftraggeber:/Empfänger: … Kto/IBAN: … Buchungstext: … Ref. …` together (`Ref.` has no colon and is a unique booking reference, used for dedupe). Pending rows say `offen`. *Verified against a real export (Nov 2026):*
+  - One file (`umsaetze_<nr>_<timestamp>.csv`) holds several sections: `"Umsätze Girokonto"`, `"Umsätze Tagesgeld PLUS-Konto"` and `"Umsätze Depot"`. Each has its own header, `Neuer Kontostand` (closing balance) and `Alter Kontostand` (opening balance). The Depot section has different columns and is skipped.
+  - The file contains no IBAN at all. Accounts are matched on `comdirect:<nr from filename>:<section>`.
+  - Some transfers have `Empfänger: NameKto/IBAN: …` with no `Buchungstext:` label. Card payments (`Kartenverfügung`) have only `Buchungstext:`, which holds the merchant, and no counterparty.
+  - The export seems capped at 500 bookings per section. The importer checks opening + bookings = closing and warns when the file was cut off.
 - **CAMT.053**: `Stmt/Acct/Id/IBAN`, `Ntry/Amt`, `CdtDbtInd`, `BookgDt`, `TxDtls/RltdPties`, `RmtInf/Ustrd`, `AcctSvcrRef`. Closing balance from `Bal` type `CLBD`.
 
 ---

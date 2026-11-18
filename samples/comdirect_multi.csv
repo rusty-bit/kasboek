@@ -1,0 +1,31 @@
+;
+"Umsätze Girokonto";"Zeitraum: 01.10.2026 - 31.10.2026";
+"Neuer Kontostand";"1.536,25 EUR";
+
+"Buchungstag";"Wertstellung (Valuta)";"Vorgang";"Buchungstext";"Umsatz in EUR";
+"offen";"--";"Kartenverfügung";"Kto/IBAN: 000000000000  Buchungstext: parkeerautomaat TEST MAASTRICHT NLD  2026-10-31T09:46:12                 ";"-1,20";
+"30.10.2026";"30.10.2026";"Kartenverfügung";" Buchungstext: ALBERT HEIJN 1234 KLIMMEN NLD 2026-10-29T18:02:11 Ref. 3K2C26303ABC1234/12345";"-54,30";
+"28.10.2026";"28.10.2026";"Lastschrift / Belastung";"Empfänger: Spotify AB Kto/IBAN: DE00500000000000000000 BLZ/BIC: XXXXDEXX Buchungstext: Spotify Premium Ref. 6C2C26301DEF5678/2";"-10,99";
+"27.10.2026";"27.10.2026";"Übertrag / Überweisung - Echtzeit";"Auftraggeber: Werkgever BV Buchungstext: Gehalt Oktober Ref. 5Z2C26300GHI9012/1";"3.500,00";
+"26.10.2026";"26.10.2026";"Kontoübertrag";"Empfänger: Test Person Kto/IBAN: DE00200411110000000002 BLZ/BIC: COBADEHDXXX Buchungstext: Sparen Ref. 7A2C26299JKL3456/1";"-500,00";
+"26.10.2026";"26.10.2026";"Wertpapiere";"WERTPAPIERE Ref. 8B2C26299MNO7890/1";"-250,00";
+"25.10.2026";"25.10.2026";"Übertrag / Überweisung - Echtzeit";"Empfänger: Jan JansenKto/IBAN: NL00INGB0000000005 BLZ/BIC: INGBNL2A Ref. 4F2C26298YZA4444/1";"-20,00";
+"30.09.2026";"30.09.2026";"Kontoabschluss";"Abschluss Ref. 9C2C26273PQR1111/1";"-4,90";
+
+"Alter Kontostand";"-1.123,56 EUR";
+
+"Umsätze Tagesgeld PLUS-Konto";"Zeitraum: 01.10.2026 - 31.10.2026";
+"Neuer Kontostand";"10.500,00 EUR";
+
+"Buchungstag";"Wertstellung (Valuta)";"Vorgang";"Buchungstext";"Umsatz in EUR";
+"31.10.2026";"31.10.2026";"Kontoabschluss";"Zinsen Ref. 1D2C26304STU2222/1";"12,34";
+"26.10.2026";"26.10.2026";"Kontoübertrag";"Auftraggeber: Test Person Kto/IBAN: DE00200411110000000001 BLZ/BIC: COBADEHDXXX Buchungstext: Sparen Ref. 2E2C26299VWX3333/1";"500,00";
+
+"Alter Kontostand";"9.987,66 EUR";
+
+"Umsätze Depot";"Zeitraum: 01.10.2026 - 31.10.2026";
+
+"Buchungstag";"Geschäftstag";"Stück / Nom.";"Bezeichnung";"WKN";"Währung";"Ausführungskurs";"Umsatz in EUR";
+"26.10.2026";"24.10.2026";"2,5";"TEST WORLD ETF ACC";"A0TEST";"EUR";"99,99";"250,00";
+"15.10.2026";"14.10.2026";"0,434";"TEST BOND FUND";"B1TEST";"EUR";"105,11";"45,62";
+

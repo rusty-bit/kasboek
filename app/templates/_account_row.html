@@ -1,0 +1,22 @@
+<tr id="acc-{{ a.id }}">
+  <td colspan="6">
+    <form hx-post="/accounts/{{ a.id }}" hx-target="#acc-{{ a.id }}" hx-swap="outerHTML"
+          method="post" action="/accounts/{{ a.id }}" class="acc-form">
+      <input name="name" value="{{ a.name }}" aria-label="Name" size="22">
+      <select name="kind" aria-label="Type">
+        {% for k in kinds %}<option value="{{ k }}" {{ 'selected' if a.kind == k }}>{{ k }}</option>{% endfor %}
+      </select>
+      <input name="owner" value="{{ a.owner }}" aria-label="Owner" size="10" list="owners">
+      <input name="iban" value="{{ a.iban or '' }}" aria-label="IBAN" placeholder="IBAN" size="24">
+      <label><input type="checkbox" name="included" value="1" {{ 'checked' if a.included }}> in totals</label>
+      <button type="submit">Save</button>
+      {% if error %}<span class="bad">{{ error }}</span>{% elif saved %}<span class="muted">Saved</span>{% endif %}
+    </form>
+    <div class="muted" style="font-size:13px;margin-top:4px">
+      {{ bank_label(a.bank) or 'No bank' }} ·
+      {% if a.balance is not none %}balance <strong class="{{ 'neg' if a.balance < 0 }}">{{ a.balance|eur }}</strong>
+      on {{ a.balance_date }}{% else %}no balance yet{% endif %} ·
+      {{ a.tx_count }} transactions{% if a.tx_count %} from {{ a.first_date }} to {{ a.last_date }}{% endif %}
+    </div>
+  </td>
+</tr>
