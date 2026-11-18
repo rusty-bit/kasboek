@@ -190,8 +190,8 @@ def transactions_page(request: Request, month: str = "", account: str = "", owne
         rows = store.transactions(con, month=month or None, account_id=int(account) if account.isdigit() else None,
                                   owner=owner or None, category=category or None, search=q.strip() or None)
         accs = store.accounts(con)
-        total_in = round(sum(r["amount"] for r in rows if r["amount"] > 0 and r["category_key"] != "transfer"), 2)
-        total_out = round(sum(r["amount"] for r in rows if r["amount"] < 0 and r["category_key"] != "transfer"), 2)
+        total_in = round(sum(r["amount"] for r in rows if r["amount"] > 0 and r["category_kind"] != "transfer"), 2)
+        total_out = round(sum(r["amount"] for r in rows if r["amount"] < 0 and r["category_kind"] != "transfer"), 2)
         return render(request, "transactions.html", {
             "page": "transactions", "rows": rows, "months": months, "accounts": accs,
             "owners": sorted({a["owner"] for a in accs}),

@@ -174,6 +174,7 @@ CATEGORIES = [
     ("fees", "Bank fees & interest", "expense", 0, 0),
     ("other", "Other spending", "expense", 0, 0),
     ("transfer", "Between own accounts", "transfer", 0, 0),
+    ("investment", "Investments", "transfer", 0, 0),       # not spending: money moved into your depot
 ]
 
 

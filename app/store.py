@@ -172,6 +172,7 @@ def update_account(con, account_id, name, kind, owner, included, iban=None):
 # --- categorisation (DB glue around app/categorize.py) --------------------------------------------
 TX_COLS = ("SELECT t.id, t.date, t.amount, t.counterparty, t.description, t.counterparty_iban, t.account_id,"
            " t.cat_source, t.mcc, t.source, c.key AS category_key, c.label AS category_label, c.key AS category,"
+           " c.kind AS category_kind,"
            " a.name AS account_name, a.owner"
            " FROM transactions t JOIN accounts a ON a.id = t.account_id"
            " LEFT JOIN categories c ON c.id = t.category_id")

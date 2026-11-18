@@ -106,9 +106,9 @@ def test_generic_shop_words():
     assert categorize(tx(cp="ASFINAG"), **CTX)[0] == "car"
 
 
-def test_investment_purchases_are_transfers():
+def test_investment_purchases_are_investments():
     t = tx(cp="", desc="ISHSIII-CORE MSCI WLD DLA WPKNR: A0RPWH ISIN: IE00B4L52Y00", amount=-50)
-    assert categorize(t, **CTX) == ("transfer", "keyword")
+    assert categorize(t, **CTX) == ("investment", "keyword")
 
 
 def test_foreign_card_payment_is_holidays_but_neighbours_are_not():
@@ -216,3 +216,17 @@ def test_clothing_shops():
     assert categorize(tx(cp="Garage Smit H M"), **CTX)[0] != "clothing"
     assert categorize(tx(cp="Zara de Vries", desc="verjaardag"), **CTX)[0] != "clothing"   # a person
     assert mcc_category("5641", "out") == "clothing"   # children's clothing
+
+
+# --- investments -----------------------------------------------------------------------------------
+def test_brokers_and_crypto_are_investments_both_ways():
+    for name in ["Trade Republic Bank GmbH", "DEGIRO", "Scalable Capital GmbH", "flatex Bank AG", "Meesman Indexbeleggen",
+                 "Brand New Day", "Bitvavo B.V.", "Coinbase Europe", "Smartbroker"]:
+        assert categorize(tx(cp=name, amount=-100), **CTX)[0] == "investment", name
+    assert categorize(tx(cp="DEGIRO", amount=250), **CTX)[0] == "investment"            # selling
+    assert categorize(tx(cp="", desc="WERTPAPIERE", amount=-250), **CTX)[0] == "investment"
+    assert mcc_category("6211", "out") == "investment"                                   # security brokers
+
+
+def test_dividends_are_income():
+    assert categorize(tx(cp="", desc="Dividende Ertragsgutschrift", amount=12.5), **CTX) == ("other_income", "keyword")

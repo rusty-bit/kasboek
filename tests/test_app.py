@@ -197,3 +197,11 @@ def test_ask_ai_unreachable_model_is_explained(client, monkeypatch):
     monkeypatch.setattr(llm, "suggest", boom)
     r = client.post("/queue/ask-ai")
     assert r.status_code == 400 and "reach the AI model" in r.text
+
+
+def test_transactions_totals_leave_out_investments(client):
+    acc = _new_account(client)
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-100,00;Trade Republic Bank GmbH\n"
+                                b"03-10-2026;-20,00;Albert Heijn 1234\n", account=str(acc))
+    r = client.get("/transactions", params={"month": "2026-10"})
+    assert "Investments" in r.text and "out <strong class=\"neg\">€ -20,00</strong>" in r.text

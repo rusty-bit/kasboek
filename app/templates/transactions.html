@@ -28,10 +28,10 @@
 <div class="card">
   <p class="muted">{{ rows|length }} transactions{{ ' (showing the newest 1000)' if rows|length >= 1000 }} ·
     in <strong>{{ total_in|eur }}</strong> · out <strong class="neg">{{ total_out|eur }}</strong>
-    <span class="small">(transfers between your own accounts left out)</span></p>
+    <span class="small">(transfers between your own accounts and investments left out)</span></p>
   {% if rows %}
   <p class="small muted">Change a category and it's saved straight away. Kasboek remembers the merchant and uses
-    the same category for its other rows, now and in future imports. Tick <em>rule</em> first to also save a rule.</p>
+    the same category for its other rows, now and in future imports, and offers to make a rule for similar names.</p>
   <div class="table-wrap"><table class="tx">
     <tr><th>Date</th><th>Name</th><th class="num">Amount</th><th>Category</th></tr>
     {% for t in rows %}{% include "_tx_row.html" %}{% endfor %}

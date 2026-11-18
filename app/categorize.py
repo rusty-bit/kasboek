@@ -68,8 +68,11 @@ def direction(t):
 # category. First matching entry wins, so order matters.
 N, A = "name", "any"
 KEYWORDS = [
-    # investments and own-account moves
-    (r"wertpapier\w*|wpknr|isin|sparplan", "transfer", None, A),
+    # investments: dividends/coupons are income, buying and selling is moving your own money
+    (r"dividende|dividend|ausschuettung|ausschüttung|ertragsgutschrift|kupon", "other_income", "in", A),
+    (r"wertpapier\w*|wpknr|isin|sparplan|trade republic|degiro|scalable capital|flatex|smartbroker|"
+     r"meesman|brand new day|peaks|bux|saxo bank|justtrade|bitvavo|coinbase|kraken|binance|bitpanda",
+     "investment", None, A),
     # income (direction-specific)
     (r"salaris|gehalt|loon|lohn|bezuege", "salary", "in", A),
     (r"kindergeld|kinderbijslag|familienkasse|kindgebonden budget", "child_benefit", "in", A),
@@ -263,7 +266,7 @@ MCC_RANGES = [
     ((5964, 5969), "shopping"),
     ((5815, 5818), "subscriptions"), ((4841, 4841), "subscriptions"),
     ((5940, 5941), "hobbies"), ((7941, 7999), "hobbies"),
-    ((6300, 6300), "insurance"), ((6011, 6011), "cash"),
+    ((6300, 6300), "insurance"), ((6011, 6011), "cash"), ((6211, 6211), "investment"),
     ((8211, 8211), "kids"), ((8351, 8351), "kids"), ((5945, 5945), "kids"),
     ((9311, 9311), "taxes"), ((9399, 9399), "taxes"), ((9222, 9222), "taxes"),
     ((742, 742), "pets"), ((5995, 5995), "pets"),          # veterinary services, pet shops
