@@ -200,3 +200,19 @@ def test_pet_shops_and_vets():
     assert mcc_category("5995", "out") == "pets"      # pet shops
     # the health keywords don't swallow vets
     assert categorize(tx(cp="Huisartsenpraktijk Bocholtz"), **CTX)[0] == "health"
+
+
+# --- clothing --------------------------------------------------------------------------------------
+def test_clothing_shops():
+    for name in ["Zalando SE", "Primark Heerlen", "Zeeman Heerlen>HEERLEN", "H&M Online", "H & M Maastricht",
+                 "C&A Online", "TK Maxx Aachen", "Deichmann Schuhe", "Van Haren Kerkrade", "Scapino",
+                 "Zara Nederland B.V.", "About You GmbH", "Hunkemoller", "Peek & Cloppenburg", "WE Fashion"]:
+        assert categorize(tx(cp=name), **CTX)[0] == "clothing", name
+    assert mcc_category("5651", "out") == "clothing"   # family clothing
+    assert mcc_category("5661", "out") == "clothing"   # shoe stores
+    # general shops stay shopping, and 'h m' only counts at the start of a name
+    assert categorize(tx(cp="bol.com"), **CTX)[0] == "shopping"
+    assert categorize(tx(cp="Coolblue"), **CTX)[0] == "shopping"
+    assert categorize(tx(cp="Garage Smit H M"), **CTX)[0] != "clothing"
+    assert categorize(tx(cp="Zara de Vries", desc="verjaardag"), **CTX)[0] != "clothing"   # a person
+    assert mcc_category("5641", "out") == "clothing"   # children's clothing

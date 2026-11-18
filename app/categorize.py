@@ -124,9 +124,15 @@ KEYWORDS = [
     (r"gamma|praxis|hornbach|obi|karwei|bauhaus|toom|hagebau|ikea|leen bakker|leenbakker|kwantum|"
      r"intratuin|tuincentrum|plantencentrum|bouwmarkt|boerenbond|welkoop|bloemen|blumen|bloemist|florist|"
      r"milieupark|milieustraat|wertstoffhof|hubo|brico|toolstation|elektramat|leidingshop", "home", None, N),
-    (r"bol com|bolcom|amazon|zalando|coolblue|mediamarkt|media markt|action|hema|primark|wehkamp|otto gmbh|"
-     r"otto versand|saturn|blokker|xenos|tk maxx|zeeman|marktplaats|vinted|wibra|tedi|kik|ebay|aliexpress|"
-     r"temu|shein|thomann|conrad", "shopping", None, N),
+    # '^' = only at the start of a name: H&M/C&A/P&C look like initials, Zara/Mango/Only are also names or words
+    (r"zalando|primark|zeeman|tk maxx|^h m|^c a|kik textil|kik|zara nederland|zara deutschland|zara home|zara com|^mango|bershka|pull bear|stradivarius|"
+     r"uniqlo|new yorker|^only|jack jones|vero moda|esprit|s oliver|tom tailor|we fashion|the sting|^score|"
+     r"costes|hunkemoller|hunkemöller|livera|peek cloppenburg|^p c|breuninger|about you|shein|bonprix|"
+     r"van haren|scapino|deichmann|schuhe|schuh|nelson schoenen|omoda|sacha schoenen|torfs|foot locker|"
+     r"snipes|nike|adidas|kleding|kleidung|textil|fashion|boutique", "clothing", None, N),
+    (r"bol com|bolcom|amazon|coolblue|mediamarkt|media markt|action|hema|wehkamp|otto gmbh|"
+     r"otto versand|saturn|blokker|xenos|marktplaats|vinted|wibra|tedi|ebay|aliexpress|"
+     r"temu|thomann|conrad", "shopping", None, N),
     (r"booking com|airbnb|klm|transavia|eurowings|ryanair|easyjet|lufthansa|tui|corendon|center parcs|"
      r"landal|roompot|hotel|suites|hostel|camping|ferienwohnung|resort|vueling|tap air|aegean|sixt|hertz|"
      r"europcar", "holidays", None, N),
@@ -252,12 +258,13 @@ MCC_RANGES = [
     ((5912, 5912), "health"), ((5122, 5122), "health"), ((8011, 8099), "health"), ((8043, 8043), "health"),
     ((5977, 5977), "personal_care"), ((7230, 7230), "personal_care"), ((7298, 7298), "personal_care"),
     ((5200, 5200), "home"), ((5211, 5261), "home"), ((5712, 5719), "home"), ((5992, 5992), "home"),
-    ((5310, 5399), "shopping"), ((5611, 5699), "shopping"), ((5732, 5735), "shopping"), ((5942, 5949), "shopping"),
+    ((5310, 5399), "shopping"), ((5611, 5699), "clothing"), ((5931, 5931), "clothing"),
+    ((5732, 5735), "shopping"), ((5942, 5949), "shopping"),
     ((5964, 5969), "shopping"),
     ((5815, 5818), "subscriptions"), ((4841, 4841), "subscriptions"),
     ((5940, 5941), "hobbies"), ((7941, 7999), "hobbies"),
     ((6300, 6300), "insurance"), ((6011, 6011), "cash"),
-    ((8211, 8211), "kids"), ((8351, 8351), "kids"), ((5641, 5641), "kids"), ((5945, 5945), "kids"),
+    ((8211, 8211), "kids"), ((8351, 8351), "kids"), ((5945, 5945), "kids"),
     ((9311, 9311), "taxes"), ((9399, 9399), "taxes"), ((9222, 9222), "taxes"),
     ((742, 742), "pets"), ((5995, 5995), "pets"),          # veterinary services, pet shops
 ]

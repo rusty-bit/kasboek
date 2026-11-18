@@ -161,6 +161,7 @@ CATEGORIES = [
     ("health", "Health & pharmacy", "expense", 1, 0),
     ("personal_care", "Personal care", "expense", 0, 1),
     ("shopping", "Shopping", "expense", 0, 1),
+    ("clothing", "Clothing", "expense", 0, 0),
     ("home", "Home, garden & DIY", "expense", 0, 0),
     ("subscriptions", "Subscriptions & media", "expense", 0, 0),
     ("holidays", "Holidays & travel", "expense", 0, 0),
