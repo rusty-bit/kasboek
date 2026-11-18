@@ -166,6 +166,8 @@ CATEGORIES = [
     ("holidays", "Holidays & travel", "expense", 0, 0),
     ("gifts", "Gifts & donations", "expense", 0, 0),
     ("hobbies", "Hobbies & sport", "expense", 0, 0),
+    ("pets", "Pets", "expense", 0, 0),
+    ("animals", "Animals", "expense", 0, 0),
     ("business", "Side business costs", "expense", 0, 0),
     ("cash", "Cash withdrawal", "expense", 0, 0),
     ("fees", "Bank fees & interest", "expense", 0, 0),

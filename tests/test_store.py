@@ -124,3 +124,14 @@ def test_migration_adds_ext_key_to_old_db(data_dir):
     db.init()
     with db.db() as c:
         assert "ext_key" in {r["name"] for r in c.execute("PRAGMA table_info(accounts)")}
+
+
+def test_new_categories_reach_existing_databases(data_dir):
+    import sqlite3
+    db.init()
+    with db.db() as c:
+        c.execute("DELETE FROM categories WHERE key IN ('pets', 'animals')")   # a DB from before they existed
+    db.init()
+    with db.db() as c:
+        rows = dict(c.execute("SELECT key, kind FROM categories WHERE key IN ('pets','animals')").fetchall())
+    assert rows == {"pets": "expense", "animals": "expense"}

@@ -188,3 +188,15 @@ def test_suggest_rule_text_is_chain_level():
     assert suggest_rule_text(tx(cp="Albert Heijn 1234 KLIMMEN")) == "albert heijn"
     assert suggest_rule_text(tx(cp="Zeeman Heerlen>HEERLEN")) == "zeeman heerlen"
     assert suggest_rule_text(tx(cp="", desc="REWE MARKT GMBH AACHEN DEU 2026-10-01T10:00:00")) == "rewe markt"
+
+
+# --- pets ------------------------------------------------------------------------------------------
+def test_pet_shops_and_vets():
+    for name in ["Zooplus AG", "Fressnapf Heerlen", "Das Futterhaus Aachen", "Maxi Zoo Kerkrade",
+                 "Dierenkliniek Parkstad", "Tierarztpraxis Dr. Muller", "Dierenarts Simpelveld", "Brekz.nl",
+                 "Pets Place Heerlen", "Ranzijn Tuin en Dier"]:
+        assert categorize(tx(cp=name), **CTX)[0] == "pets", name
+    assert mcc_category("0742", "out") == "pets"      # veterinary services
+    assert mcc_category("5995", "out") == "pets"      # pet shops
+    # the health keywords don't swallow vets
+    assert categorize(tx(cp="Huisartsenpraktijk Bocholtz"), **CTX)[0] == "health"

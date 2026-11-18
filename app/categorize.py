@@ -94,6 +94,11 @@ KEYWORDS = [
      r"microsoft|adobe", "subscriptions", None, A),
     (r"kinderopvang|kita|kindergarten|peuterspeelzaal|bso|humankind|partou|kinderrijk|smallsteps|kober|"
      r"kinderdagverblijf|gastouder", "kids", None, N),
+    (r"zooplus|fressnapf|futterhaus|das futterhaus|maxi zoo|zoo zajac|zooroyal|bitiba|brekz|medpets|"
+     r"petsonline|pets place|ranzijn|jumper diervoeding|dierenspeciaalzaak|dierenwinkel|zoohandlung|"
+     r"dierenarts\w*|dierenkliniek|dierenziekenhuis|tierarzt\w*|tierklinik|tieraerzt\w*|hondenschool|"
+     r"hundeschule|trimsalon|hondentrimsalon|hundesalon|dierenpension|hondenpension|kattenpension|"
+     r"tierpension|dierenasiel|tierheim|petplan|figo pet|hondenbelasting|hundesteuer", "pets", None, N),
     # everyday (no bare person-like names here: a transfer to a friend called Dirk is not groceries)
     (r"albert heijn|ah to go|jumbo|lidl|aldi|^plus|rewe|edeka|picnic|dirk van den broek|coop|kaufland|"
      r"netto|penny|ekoplaza|hoogvliet|vomar|deen supermarkt|spar|crisp|delhaize|carrefour|intermarche|"
@@ -112,7 +117,7 @@ KEYWORDS = [
     (r"parkeer\w*|parkere\w*|parking|parkhaus|q park|apcoa|rdw|kwik fit|euromaster|autobedrijf|anwb|"
      r"asfinag|aprr|sanef|vinci autoroutes|peage|maut|tuev|tüv|dekra|apk|carwash|waschstrasse",
      "car", None, N),
-    (r"apotheek|apotheke|farmacia|pharmacie|pharmacy|huisarts|tandarts|zahnarzt|orthodont\w*|fysio\w*|"
+    (r"apotheek|apotheke|farmacia|pharmacie|pharmacy|huisarts\w*|tandarts|zahnarzt|orthodont\w*|fysio\w*|"
      r"ziekenhuis|krankenhaus|zuyderland|mumc|optiek|specsavers", "health", None, N),
     (r"kruidvat|etos|dm|dm drogerie|rossmann|douglas|trekpleister|kapper|kapsalon|friseur|barbershop",
      "personal_care", None, N),
@@ -254,6 +259,7 @@ MCC_RANGES = [
     ((6300, 6300), "insurance"), ((6011, 6011), "cash"),
     ((8211, 8211), "kids"), ((8351, 8351), "kids"), ((5641, 5641), "kids"), ((5945, 5945), "kids"),
     ((9311, 9311), "taxes"), ((9399, 9399), "taxes"), ((9222, 9222), "taxes"),
+    ((742, 742), "pets"), ((5995, 5995), "pets"),          # veterinary services, pet shops
 ]
 
 
