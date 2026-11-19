@@ -79,3 +79,7 @@ The app listens on port 8420 and the container is limited to 256 MB.
 Bump the version in `docker-compose.yml` and `portainer-stack.yml`, commit, then tag:
 `git tag v0.4.1 && git push origin v0.4.1`. GitHub Actions runs the tests and publishes
 `ghcr.io/rusty-bit/kasboek:0.4.1` for amd64 and arm64.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Kasboek is read-only: it never makes payments. Your bank data stays on your own server.

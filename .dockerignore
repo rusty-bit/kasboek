@@ -15,4 +15,5 @@ docs
 stack.env
 .impeccable
 *.md
+!LICENSE
 portainer-stack.yml
