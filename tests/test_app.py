@@ -325,3 +325,46 @@ def test_forecast_page_and_low_balance_setting(client):
     assert 'name="low_balance" value="250' in client.get("/forecast").text
     r = client.post("/settings/low-balance", data={"low_balance": "abc"})
     assert r.status_code == 400
+
+
+# --- search by amount and date ---------------------------------------------------------------------------
+def _search_rows(client):
+    acc = _new_account(client)
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n18-03-2026;-2895,54;Lymow shop\n"
+                                b"03-10-2026;-13,99;Netflix International\n05-10-2026;250,00;Teruggave\n"
+                                b"12-10-2026;-120,00;Gamma Heerlen\n", account=str(acc))
+
+
+def test_search_by_amount_finds_it_in_any_month(client):
+    _search_rows(client)
+    r = client.get("/transactions", params={"q": "2895,54"})
+    assert "Lymow shop" in r.text and "Netflix" not in r.text
+    r = client.get("/transactions", params={"q": "100-300"})
+    assert "Teruggave" in r.text and "Gamma" in r.text and "Netflix" not in r.text and "Lymow" not in r.text
+    r = client.get("/transactions", params={"q": "+250"})
+    assert "Teruggave" in r.text and "Gamma" not in r.text
+
+
+def test_search_by_date_and_date_range(client):
+    _search_rows(client)
+    r = client.get("/transactions", params={"q": "18-03-2026"})
+    assert "Lymow shop" in r.text and "Netflix" not in r.text
+    r = client.get("/transactions", params={"date_from": "2026-10-04", "date_to": "2026-10-31"})
+    assert "Teruggave" in r.text and "Gamma" in r.text and "Netflix" not in r.text and "Lymow" not in r.text
+    assert 'name="date_from" value="2026-10-04"' in r.text
+
+
+def test_search_text_and_amount_together(client):
+    _search_rows(client)
+    r = client.get("/transactions", params={"q": "netflix 13.99"})
+    assert "Netflix" in r.text and "Gamma" not in r.text
+    assert "Searching for" in r.text and "€ 13,99" in r.text
+
+
+def test_search_from_the_form_looks_in_all_months_by_default(client):
+    _search_rows(client)
+    page = client.get("/transactions").text
+    import re
+    default = re.search(r'<select name="month"[^>]*>.*?<option value="([^"]*)"[^>]*selected', page, re.S).group(1)
+    r = client.get("/transactions", params={"month": default, "q": "2895,54", "account": "", "owner": "", "category": ""})
+    assert "Lymow shop" in r.text

@@ -6,8 +6,9 @@
 
 <form class="card filters" method="get" action="/transactions">
   <select name="month" aria-label="Month">
-    <option value="all" {{ 'selected' if not f.month }}>All months</option>
-    {% for m in months %}<option value="{{ m }}" {{ 'selected' if m == f.month }}>{{ m }}</option>{% endfor %}
+    <option value="" {{ 'selected' if not f.month_param }}>{{ 'Latest month' if not (f.q or f.date_from or f.date_to) else 'Any month' }}</option>
+    <option value="all" {{ 'selected' if f.month_param == 'all' }}>All months</option>
+    {% for m in months %}<option value="{{ m }}" {{ 'selected' if m == f.month_param }}>{{ m }}</option>{% endfor %}
   </select>
   <select name="account" aria-label="Account">
     <option value="">All accounts</option>
@@ -21,9 +22,20 @@
     <option value="">All categories</option>
     {% for c in categories %}<option value="{{ c.key }}" {{ 'selected' if c.key == f.category }}>{{ c.label }}</option>{% endfor %}
   </select>
-  <input type="search" name="q" value="{{ f.q }}" placeholder="Search name or description">
+  <input type="search" name="q" value="{{ f.q }}" placeholder="Name, amount or date" size="26"
+         title="Text, an amount (2895,54 · -80000 for money out · 100-500 for a range) and/or a date (18-03-2026)">
+  <label class="small muted">from <input type="date" name="date_from" value="{{ f.date_from }}"></label>
+  <label class="small muted">to <input type="date" name="date_to" value="{{ f.date_to }}"></label>
   <button type="submit">Show</button>
+  {% if f.q or f.date_from or f.date_to %}<a class="small" href="/transactions">Clear</a>{% endif %}
 </form>
+{% if sq %}
+<p class="small muted">Searching for
+  {% if sq.text %}“{{ sq.text }}”, {% endif %}
+  {% if sq.amount %}{{ 'money out of ' if sq.sign == 'out' else 'money in of ' if sq.sign == 'in' else 'an amount of ' }}{{ sq.amount[0]|eur }}{% if sq.amount[1] != sq.amount[0] %} to {{ sq.amount[1]|eur }}{% endif %}{% endif %}
+  {% if sq.date %}{{ ', ' if sq.amount }}on {{ sq.date }}{% endif %}
+  {{ ' in ' ~ f.month if f.month else ' in all months' }}.</p>
+{% endif %}
 
 <div class="card">
   <p class="muted">{{ rows|length }} transactions{{ ' (showing the newest 1000)' if rows|length >= 1000 }} ·

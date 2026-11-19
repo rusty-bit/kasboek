@@ -360,8 +360,17 @@ def categories(con):
 
 
 def transactions(con, month=None, account_id=None, owner=None, category=None, search=None, queue=False,
-                 limit=1000):
+                 limit=1000, amount=None, sign=None, date_from=None, date_to=None):
+    """amount: (low, high) on the size of the amount, money in or out; sign 'in' / 'out' narrows it."""
     where, args = [], []
+    if amount:
+        where.append("abs(t.amount) BETWEEN ? AND ?"); args += [amount[0] - 0.005, amount[1] + 0.005]
+    if sign:
+        where.append("t.amount > 0" if sign == "in" else "t.amount < 0")
+    if date_from:
+        where.append("t.date >= ?"); args.append(date_from)
+    if date_to:
+        where.append("t.date <= ?"); args.append(date_to)
     if month:
         where.append("substr(t.date, 1, 7) = ?"); args.append(month)
     if account_id:

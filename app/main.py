@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app import charts
+from app import charts, search
 from app import recurring as rc
 from app import db, enablebanking, llm, store
 from app.fmt import eur
@@ -191,24 +191,41 @@ def account_edit(request: Request, account_id: int, name: str = Form(""), kind: 
 
 
 # --- transactions ---------------------------------------------------------------------------------
+def _iso_or_none(s):
+    try:
+        return date.fromisoformat((s or "").strip()).isoformat()
+    except ValueError:
+        return None
+
+
 @app.get("/transactions")
 def transactions_page(request: Request, month: str = "", account: str = "", owner: str = "", category: str = "",
-                      q: str = ""):
+                      q: str = "", date_from: str = "", date_to: str = ""):
+    """The search box takes text, an amount ('2895,54', '-80000', '100-500') and/or a date ('18-03-2026')."""
+    sq = search.parse_query(q)
+    d_from, d_to = _iso_or_none(date_from), _iso_or_none(date_to)
+    if sq["date"]:
+        d_from = d_to = sq["date"]
+    month_param = month
     with db.db() as con:
         months = store.months(con)
-        if not month and not (q or category or account or owner):
+        if not month and not (q.strip() or d_from or d_to):      # a search looks in every month
             month = months[0] if months else ""
         if month == "all":
             month = ""
         rows = store.transactions(con, month=month or None, account_id=int(account) if account.isdigit() else None,
-                                  owner=owner or None, category=category or None, search=q.strip() or None)
+                                  owner=owner or None, category=category or None, search=sq["text"],
+                                  amount=sq["amount"], sign=sq["sign"], date_from=d_from, date_to=d_to)
         accs = store.accounts(con)
         total_in = round(sum(r["amount"] for r in rows if r["amount"] > 0 and r["category_kind"] != "transfer"), 2)
         total_out = round(sum(r["amount"] for r in rows if r["amount"] < 0 and r["category_kind"] != "transfer"), 2)
         return render(request, "transactions.html", {
             "page": "transactions", "rows": rows, "months": months, "accounts": accs,
             "owners": sorted({a["owner"] for a in accs}),
-            "f": {"month": month, "account": account, "owner": owner, "category": category, "q": q},
+            "f": {"month": month, "month_param": month_param, "account": account, "owner": owner, "category": category, "q": q,
+                  "date_from": date_from if _iso_or_none(date_from) else "",
+                  "date_to": date_to if _iso_or_none(date_to) else ""},
+            "sq": sq if (sq["amount"] or sq["date"]) else None,
             "total_in": total_in, "total_out": total_out}, con=con)
 
 
