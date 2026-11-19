@@ -83,20 +83,24 @@ def _spent(rows, start, end):
 
 def spending(rows, start, end):
     """Spending between start and end: total, per group (fixed group order, empty groups left out) and per
-    category (largest first)."""
-    cats = {}
+    category (largest first). A row's `category_group` (a category you added or regrouped) beats the built-in
+    group."""
+    cats, gmap = {}, {}
     for t in _spent(rows, start, end):
         cats[t["category_key"]] = cats.get(t["category_key"], 0.0) - t["amount"]
+        if t.get("category_group") in GROUP_LABEL:
+            gmap[t["category_key"]] = t["category_group"]
     cats = {k: round(v, 2) for k, v in cats.items() if round(v, 2) > 0}
+    grp = lambda k: gmap.get(k) or group_of(k)
     groups = []
     for key, label, members in GROUPS:
-        amount = round(sum(v for k, v in cats.items() if group_of(k) == key), 2)
+        amount = round(sum(v for k, v in cats.items() if grp(k) == key), 2)
         if amount > 0:
             groups.append({"key": key, "label": label, "amount": amount})
     total = round(sum(g["amount"] for g in groups), 2)
     for g in groups:
         g["share"] = g["amount"] / total if total else 0
-    categories = [{"key": k, "amount": v, "group": group_of(k)} for k, v in sorted(cats.items(), key=lambda kv: -kv[1])]
+    categories = [{"key": k, "amount": v, "group": grp(k)} for k, v in sorted(cats.items(), key=lambda kv: -kv[1])]
     return {"total": total, "groups": groups, "categories": categories}
 
 

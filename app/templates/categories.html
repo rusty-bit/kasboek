@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_select %}
+{% block title %}Categories · Kasboek{% endblock %}
+{% block content %}
+<h1>Categories</h1>
+{% if error %}<div class="error card">{{ error }}</div>{% endif %}
+<p class="muted">Every payment has exactly one category, so the totals count every euro once. Add your own, rename
+  any of them, and choose which dashboard group a spending category belongs to. Categories you added can be deleted;
+  their payments move to the category you pick.</p>
+
+<div class="card">
+  <h2>New category</h2>
+  <form method="post" action="/categories" class="filters">
+    <input name="label" placeholder="Name, e.g. Music lessons" maxlength="50" required aria-label="Name">
+    <select name="kind" aria-label="Kind">
+      <option value="expense">Spending</option><option value="income">Income</option>
+      <option value="transfer">Other (not spending or income)</option>
+    </select>
+    <select name="group" aria-label="Dashboard group (spending only)">
+      {% for key, label, _ in groups %}<option value="{{ key }}" {{ 'selected' if key == 'other' }}>{{ label }}</option>{% endfor %}
+    </select>
+    <label class="small"><input type="checkbox" name="essential" value="1"> essential</label>
+    <button type="submit">Add category</button>
+  </form>
+  <p class="small muted">"Other" categories are left out of spending and income, like moves between your own accounts.
+    Essential spending is what you can't easily skip (rent, groceries).</p>
+</div>
+
+{% for kind, title in [("expense", "Spending"), ("income", "Income"), ("transfer", "Other")] %}
+<div class="card">
+  <h2>{{ title }}</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Name</th>{% if kind == 'expense' %}<th>Dashboard group</th><th>Essential</th>{% endif %}<th class="num">Payments</th><th></th></tr>
+    {% for c in cats if c.kind == kind %}
+    <tr id="cat-{{ c.key }}" class="{{ 'saved' if saved == c.key }}">
+      <td colspan="{{ 3 if kind == 'expense' else 1 }}">
+        <form method="post" action="/categories/{{ c.key }}" class="filters cat-edit">
+          <input name="label" value="{{ c.label }}" maxlength="50" required aria-label="Name of {{ c.label }}">
+          {% if kind == 'expense' %}
+          <select name="group" aria-label="Dashboard group of {{ c.label }}">
+            {% for key, label, _ in groups %}<option value="{{ key }}" {{ 'selected' if key == c.grp }}>{{ label }}</option>{% endfor %}
+          </select>
+          <label class="small"><input type="checkbox" name="essential" value="1" {{ 'checked' if c.essential }}> essential</label>
+          {% endif %}
+          <button type="submit" class="small">Save</button>
+          {% if saved == c.key %}<span class="small ok-text">✓ Saved</span>{% endif %}
+          {% if c.custom %}<span class="chip small">yours</span>{% endif %}
+        </form>
+      </td>
+      <td class="num">{{ c.count }}</td>
+      <td>
+        {% if c.custom %}
+        <details class="small"><summary>delete</summary>
+          <form method="post" action="/categories/{{ c.key }}/delete" class="filters" style="margin-top:6px">
+            <span class="muted">Move its {{ c.count }} payments to</span>
+            {{ category_select(cats|rejectattr('key', 'equalto', c.key)|list, 'other' if kind == 'expense' else 'other_income' if kind == 'income' else 'transfer', name="move_to") }}
+            <button type="submit">Delete</button>
+          </form>
+        </details>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endfor %}
+{% endblock %}

@@ -218,6 +218,8 @@ MIGRATIONS = [
     ("recurring", "kind", "TEXT"),                          # income | expense | transfer (category kind)
     ("recurring", "on_checking", "INTEGER NOT NULL DEFAULT 1"),  # paid from/to a checking account
     ("transactions", "personal_for", "TEXT NOT NULL DEFAULT ''"),  # only for this person (fair share)
+    ("categories", "grp", "TEXT"),                          # dashboard group; NULL = the built-in one
+    ("categories", "custom", "INTEGER NOT NULL DEFAULT 0"),  # added by you (can be deleted)
 ]
 
 

@@ -361,7 +361,88 @@ def rules(con, with_hits=True):
 
 
 def categories(con):
-    return [dict(r) for r in con.execute("SELECT * FROM categories ORDER BY kind DESC, label")]
+    """All categories. grp is the dashboard group of a spending category (built-in one unless you changed it)."""
+    from app import analytics as an
+    out = [dict(r) for r in con.execute("SELECT * FROM categories ORDER BY kind DESC, label")]
+    for c in out:
+        c["grp"] = (c["grp"] or an.group_of(c["key"])) if c["kind"] == "expense" else None
+    return out
+
+
+CATEGORY_KINDS = ("expense", "income", "transfer")
+
+
+def _check_label(con, label, skip_key=None):
+    label = re.sub(r"\s+", " ", label or "").strip()
+    if not label:
+        raise ValueError("Give the category a name.")
+    if len(label) > 50:
+        raise ValueError("Keep the name under 50 characters.")
+    taken = con.execute("SELECT key FROM categories WHERE lower(label)=lower(?) AND key != ?",
+                        (label, skip_key or "")).fetchone()
+    if taken:
+        raise ValueError(f"There is already a category called {label}.")
+    return label
+
+
+def _check_group(group):
+    from app import analytics as an
+    return group if group in an.GROUP_LABEL else "other"
+
+
+def add_category(con, label, kind, group=None, essential=False):
+    """A category of your own. Returns its key (made from the name: 'Horse riding' -> 'horse_riding')."""
+    label = _check_label(con, label)
+    if kind not in CATEGORY_KINDS:
+        raise ValueError("Pick spending, income or other.")
+    base = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")[:30] or "category"
+    key, n = base, 1
+    while con.execute("SELECT 1 FROM categories WHERE key=?", (key,)).fetchone():
+        n += 1
+        key = f"{base}_{n}"
+    con.execute("INSERT INTO categories(key, label, kind, essential, everyday, grp, custom) VALUES (?,?,?,?,0,?,1)",
+                (key, label, kind, 1 if essential else 0, _check_group(group) if kind == "expense" else None))
+    log.info("Added category %s", key)
+    return key
+
+
+def update_category(con, key, label=None, group=None, essential=None):
+    _cat_id(con, key)
+    if label is not None:
+        con.execute("UPDATE categories SET label=? WHERE key=?", (_check_label(con, label, key), key))
+    if group is not None:
+        con.execute("UPDATE categories SET grp=? WHERE key=? AND kind='expense'", (_check_group(group), key))
+    if essential is not None:
+        con.execute("UPDATE categories SET essential=? WHERE key=?", (1 if essential else 0, key))
+
+
+def delete_category(con, key, move_to):
+    """Delete a category you added. Its payments, rules, learned shops, budget and habits move to `move_to`;
+    payments you set by hand stay set by you."""
+    row = con.execute("SELECT id, custom FROM categories WHERE key=?", (key,)).fetchone()
+    if not row:
+        raise ValueError(f"Unknown category: {key}")
+    if not row["custom"]:
+        raise ValueError("Built-in categories can't be deleted, only renamed.")
+    if move_to == key:
+        raise ValueError("Pick another category to move its payments to.")
+    old, new = row["id"], _cat_id(con, move_to)
+    for table in ("transactions", "rules", "merchant_memory", "llm_guesses", "habits", "recurring"):
+        con.execute(f"UPDATE {table} SET category_id=? WHERE category_id=?", (new, old))
+    con.execute("UPDATE OR IGNORE budgets SET category_id=? WHERE category_id=?", (new, old))
+    con.execute("DELETE FROM budgets WHERE category_id=?", (old,))
+    for a in con.execute("SELECT id, categories FROM analyses").fetchall():
+        keys = [k for k in (a["categories"] or "").split(",") if k]
+        if key in keys:
+            keys = list(dict.fromkeys(move_to if k == key else k for k in keys))
+            con.execute("UPDATE analyses SET categories=? WHERE id=?", (",".join(keys), a["id"]))
+    con.execute("DELETE FROM categories WHERE id=?", (old,))
+    log.info("Deleted category %s, moved to %s", key, move_to)
+    recategorize(con)
+
+
+def category_counts(con):
+    return {r[0]: r[1] for r in con.execute("SELECT category_id, COUNT(*) FROM transactions GROUP BY category_id")}
 
 
 def transactions(con, month=None, account_id=None, owner=None, category=None, search=None, queue=False,
@@ -678,7 +759,7 @@ def analytics_rows(con):
     """Transactions of included accounts, for the dashboard numbers."""
     return [dict(r) for r in con.execute(
         "SELECT t.date, t.amount, t.counterparty, t.description, t.account_id, c.key AS category_key,"
-        " c.kind AS category_kind FROM transactions t JOIN accounts a ON a.id = t.account_id"
+        " c.kind AS category_kind, c.grp AS category_group FROM transactions t JOIN accounts a ON a.id = t.account_id"
         " LEFT JOIN categories c ON c.id = t.category_id WHERE a.included = 1 AND t.ignored = 0")]
 
 

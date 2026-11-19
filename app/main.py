@@ -734,6 +734,54 @@ def _num(s):
         raise ValueError(f"'{s}' is not an amount.") from None
 
 
+# --- categories -----------------------------------------------------------------------------------
+def _categories_page(request, con, status=200, **ctx):
+    counts = store.category_counts(con)
+    cats = store.categories(con)
+    for c in cats:
+        c["count"] = counts.get(c["id"], 0)
+    return render(request, "categories.html", {"page": "categories", "cats": cats, "groups": analytics.GROUPS,
+                                               **ctx}, status, con)
+
+
+@app.get("/categories")
+def categories_page(request: Request, saved: str = ""):
+    with db.db() as con:
+        return _categories_page(request, con, saved=saved)
+
+
+@app.post("/categories")
+def category_add(request: Request, label: str = Form(""), kind: str = Form("expense"), group: str = Form("other"),
+                 essential: str = Form("")):
+    with db.db() as con:
+        try:
+            key = store.add_category(con, label, kind, group=group, essential=bool(essential))
+        except ValueError as e:
+            return _categories_page(request, con, 400, error=str(e))
+    return RedirectResponse(f"/categories?saved={key}#cat-{key}", status_code=303)
+
+
+@app.post("/categories/{key}")
+def category_edit(request: Request, key: str, label: str = Form(""), group: str = Form(""),
+                  essential: str = Form("")):
+    with db.db() as con:
+        try:
+            store.update_category(con, key, label=label, group=group or None, essential=bool(essential))
+        except ValueError as e:
+            return _categories_page(request, con, 400, error=str(e))
+    return RedirectResponse(f"/categories?saved={key}#cat-{key}", status_code=303)
+
+
+@app.post("/categories/{key}/delete")
+def category_delete(request: Request, key: str, move_to: str = Form("")):
+    with db.db() as con:
+        try:
+            store.delete_category(con, key, move_to)
+        except ValueError as e:
+            return _categories_page(request, con, 400, error=str(e))
+    return RedirectResponse("/categories", status_code=303)
+
+
 @app.get("/rules")
 def rules_page(request: Request):
     with db.db() as con:
