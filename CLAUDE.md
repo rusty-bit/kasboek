@@ -18,7 +18,7 @@ Self-hosted family finance app. Full spec: `docs/SPEC.md` (read it first). Plan:
 
 ## Deployment target
 - Asustor NAS, ~3.8 GB RAM, Docker via Portainer stacks. Keep the container under ~200 MB RAM.
-- **Bind mounts must be absolute paths under `/volume2/Docker/kasboek/...` (the NAS `Docker` share is `/volume1/Docker`; checked 2026-11-19).** A relative path in a Portainer stack lands on the 1.8 GB rootfs and has taken the NAS down before. `env_file: stack.env` may stay relative.
+- **Bind mounts must be absolute paths under `/volume1/Docker/kasboek/...` (same volume as Docker itself, `/volume1/.@plugins/AppCentral/docker-ce/docker_lib`, so the data is always mounted when containers start; the NAS `Docker` share is `/volume1/Docker`; checked 2026-11-19).** A relative path in a Portainer stack lands on the 1.8 GB rootfs and has taken the NAS down before. `env_file: stack.env` may stay relative.
 - Pin image tags; no `:latest`. Add healthcheck + log rotation.
 - Optional: local LLM on the home AI box via an OpenAI-compatible URL (`LLM_BASE_URL`). The app must work fully without it.
 

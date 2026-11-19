@@ -204,7 +204,7 @@ Tags add the cross-cutting view: any number per booking, answering "for whom / f
 | M5 | Pots, habits, budgets | Habit month-end suggestion books a pot move |
 | M5b | Tags (§6.8): per-booking tags, bulk tagging, rule/memory tags, tag filters and analyses | "What did the kids cost this year" works across categories without double-counting totals |
 | M6 | Enable Banking connector + scheduler + consent alert | All three banks sync for a week unattended |
-| M7 | HA sensor, ntfy, backups, deploy on the NAS via Portainer | Runs on the NAS from absolute `/volume2/Docker/kasboek` paths and survives a reboot |
+| M7 | HA sensor, ntfy, backups, deploy on the NAS via Portainer | Runs on the NAS from absolute `/volume1/Docker/kasboek` paths and survives a reboot |
 | v2 | Seasonal hints, savings-account-linked pots, weekly check-in, FinTS fallback | — |
 | v3 | Local-LLM chat over your data | — |
 
