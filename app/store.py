@@ -2,9 +2,11 @@
 import logging
 import sqlite3
 from collections import OrderedDict
+from datetime import date
 
 from app.categorize import (Rule, categorize_all, direction, memory_keys, merchant_text, norm_text,
                             normalize_merchant, rule_matches, suggest_rule_text)
+from app import recurring as rc
 from app.importers import crossmatch, dedupe_keys, group_key
 from app.transfers import infer_ibans
 
@@ -497,3 +499,72 @@ def relearn(con):
             con.execute("INSERT OR IGNORE INTO merchant_memory(norm, direction, category_id) VALUES (?,?,?)",
                         (norm, d, cid))
     return recategorize(con) if con.total_changes != before else 0
+
+
+# --- recurring streams and contracts (M3) ---------------------------------------------------------
+REC_FIELDS = ("merchant", "frequency", "average", "last_amount", "prev_typical", "last_date", "first_date",
+              "next_date", "is_income", "status", "category_id", "count", "anchor_day", "kind", "on_checking")
+
+
+def _recurring_input(con):
+    return [dict(r) for r in con.execute(
+        "SELECT t.date, t.amount, t.counterparty, t.description, t.account_id, a.kind AS account_kind,"
+        " c.key AS category_key, c.kind AS category_kind"
+        " FROM transactions t JOIN accounts a ON a.id = t.account_id LEFT JOIN categories c ON c.id = t.category_id"
+        " WHERE a.included = 1 AND t.ignored = 0 AND t.currency = 'EUR'")]
+
+
+def refresh_recurring(con, today=None):
+    """Detect streams again and upsert them on key. Contract fields and 'not a bill' (dismissed) are yours
+    and stay. Streams no longer detected go, unless you marked them a contract or dismissed them."""
+    today = today or date.today()
+    everyday = {r["key"] for r in con.execute("SELECT key FROM categories WHERE everyday = 1")}
+    bills = {r["key"] for r in con.execute("SELECT key FROM categories WHERE essential = 1 AND everyday = 0")}
+    ids = {r["key"]: r["id"] for r in con.execute("SELECT id, key FROM categories")}
+    found = rc.find_recurring(_recurring_input(con), today, everyday, bills)
+    for s in found:
+        row = {**s, "category_id": ids.get(s["category_key"]), "is_income": int(s["is_income"]),
+               "on_checking": int(s["on_checking"])}
+        cols = ", ".join(("key",) + REC_FIELDS)
+        con.execute(f"INSERT INTO recurring({cols}) VALUES ({', '.join('?' * (len(REC_FIELDS) + 1))})"
+                    f" ON CONFLICT(key) DO UPDATE SET " + ", ".join(f"{f}=excluded.{f}" for f in REC_FIELDS),
+                    [s["key"]] + [row[f] for f in REC_FIELDS])
+    keys = [s["key"] for s in found]
+    con.execute(f"DELETE FROM recurring WHERE is_contract = 0 AND dismissed = 0"
+                f" AND key NOT IN ({', '.join('?' * len(keys))})", keys)
+    return len(found)
+
+
+def recurring(con, include_dismissed=False):
+    rows = con.execute("SELECT r.*, c.key AS category_key, c.label AS category_label"
+                       " FROM recurring r LEFT JOIN categories c ON c.id = r.category_id"
+                       + ("" if include_dismissed else " WHERE r.dismissed = 0")).fetchall()
+    out = []
+    for r in rows:
+        s = dict(r)
+        s["kind"] = s["kind"] or ("income" if s["is_income"] else "expense")
+        s["monthly"] = round(rc.monthly_amount(s["average"], s["frequency"]), 2)
+        cb = rc.cancel_by(s)
+        s["cancel_by"] = cb.isoformat() if cb else None
+        s["price_hike"] = rc.price_hike(s)
+        out.append(s)
+    return sorted(out, key=lambda s: (s["status"] == "stopped", -abs(s["monthly"])))
+
+
+def recurring_one(con, rid):
+    return next((s for s in recurring(con, include_dismissed=True) if s["id"] == rid), None)
+
+
+def update_contract(con, rid, is_contract, contract_end=None, notice_days=None, notes=""):
+    if contract_end:
+        date.fromisoformat(contract_end)   # ValueError for a malformed date
+    con.execute("UPDATE recurring SET is_contract=?, contract_end=?, notice_days=?, notes=? WHERE id=?",
+                (int(bool(is_contract)), contract_end or None, notice_days, notes or "", rid))
+
+
+def dismiss_recurring(con, rid, dismissed=True):
+    con.execute("UPDATE recurring SET dismissed=? WHERE id=?", (int(bool(dismissed)), rid))
+
+
+def recurring_alerts(con, today=None):
+    return rc.alerts(recurring(con), today or date.today())

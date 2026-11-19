@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app import recurring as rc
 from app import db, enablebanking, llm, store
 from app.fmt import eur
 from app.importers import parse_statement
@@ -29,6 +30,7 @@ templates.env.globals["kinds"] = store.KINDS
 SOURCE_LABELS = {"manual": "set by you", "transfer": "own transfer", "rule": "rule", "memory": "learned",
                  "iban": "learned (same IBAN)", "chain": "learned (same chain)", "keyword": "keyword",
                  "mcc": "shop type from bank", "llm": "AI guess", "default": "unsure"}
+templates.env.globals["freq_label"] = lambda f: rc.FREQ_LABELS.get(f, f)
 templates.env.globals["source_label"] = lambda s: SOURCE_LABELS.get(s or "", s or "")
 FIELD_LABELS = {"any": "name or description", "counterparty": "name", "description": "description", "iban": "IBAN"}
 templates.env.globals["field_label"] = lambda f: FIELD_LABELS.get(f, f)
@@ -69,6 +71,7 @@ def _sync_job():
         if not store.eb_sessions(con):
             return
         rep = store.sync_all(con, eb_client())
+        store.refresh_recurring(con)
     log.info("Background sync: %s new transactions", sum(r["added"] for r in rep))
 
 
@@ -98,7 +101,14 @@ def health():
 def overview(request: Request):
     with db.db() as con:
         tx_count = con.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
-        return render(request, "overview.html", {"page": "overview", "tx_count": tx_count}, con=con)
+        ctx = {"page": "overview", "tx_count": tx_count}
+        if tx_count:
+            store.refresh_recurring(con)
+            streams = store.recurring(con)
+            ctx["alerts"] = rc.alerts(streams, date.today())
+            ctx["upcoming"] = sorted((s for s in streams if s["status"] != "stopped" and s["kind"] != "transfer"),
+                                     key=lambda s: s["next_date"])[:10]
+        return render(request, "overview.html", ctx, con=con)
 
 
 # --- import ---------------------------------------------------------------------------------------
@@ -358,6 +368,60 @@ def queue_rule(request: Request, tx_id: int = Form(...), match_text: str = Form(
         if _is_htmx(request):
             return _saved_row(request, con, before, row_id or tx_id, tx_id, rule_hits=hits)
     return RedirectResponse(f"/queue?rule_hits={hits}", status_code=303)
+
+
+# --- recurring & contracts (M3) ---------------------------------------------------------------------
+@app.get("/recurring")
+def recurring_page(request: Request, hidden: int = 0):
+    with db.db() as con:
+        store.refresh_recurring(con)
+        everything = store.recurring(con, include_dismissed=True)
+        shown = [s for s in everything if bool(s["dismissed"]) == bool(hidden)]
+        visible = [s for s in everything if not s["dismissed"]]
+        live = [s for s in visible if s["status"] != "stopped"]
+        totals = {k: round(sum(s["monthly"] for s in live if s["kind"] == k), 2)
+                  for k in ("income", "expense", "transfer")}
+        going = [s for s in shown if s["status"] != "stopped"]
+        sections = [
+            ("Bills & subscriptions", [s for s in going if s["kind"] == "expense"]),
+            ("Income", [s for s in going if s["kind"] == "income"]),
+            ("Savings & moves between your accounts", [s for s in going if s["kind"] == "transfer"]),
+            ("Stopped (no payment for a while)", [s for s in shown if s["status"] == "stopped"]),
+        ]
+        return render(request, "recurring.html", {
+            "page": "recurring", "streams": shown, "sections": sections, "totals": totals, "hidden": hidden,
+            "n_hidden": len(everything) - len(visible),
+            "alerts": [] if hidden else rc.alerts(visible, date.today())}, con=con)
+
+
+def _int_or_none(v):
+    v = (v or "").strip()
+    return int(v) if v.isdigit() else None
+
+
+@app.post("/recurring/{rid}/contract")
+def recurring_contract(request: Request, rid: int, is_contract: str = Form(""), contract_end: str = Form(""),
+                       notice_days: str = Form(""), notes: str = Form("")):
+    with db.db() as con:
+        try:
+            store.update_contract(con, rid, bool(is_contract), contract_end.strip() or None,
+                                  _int_or_none(notice_days), notes.strip())
+        except ValueError:
+            return render(request, "_rec_row.html", {"s": store.recurring_one(con, rid),
+                                                     "error": "That end date isn't a date. Use the date picker."},
+                          400, con)
+        if not _is_htmx(request):
+            return RedirectResponse("/recurring", status_code=303)
+        return render(request, "_rec_row.html", {"s": store.recurring_one(con, rid), "saved": True}, con=con)
+
+
+@app.post("/recurring/{rid}/dismiss")
+def recurring_dismiss(request: Request, rid: int, dismissed: str = Form("1")):
+    with db.db() as con:
+        store.dismiss_recurring(con, rid, dismissed == "1")
+    if _is_htmx(request):
+        return HTMLResponse("")
+    return RedirectResponse("/recurring", status_code=303)
 
 
 # --- rules ----------------------------------------------------------------------------------------

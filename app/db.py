@@ -205,6 +205,9 @@ MIGRATIONS = [
     ("transactions", "alt_key", "TEXT"),                   # dedupe key of the same booking from the other source
     ("eb_sessions", "last_sync", "TEXT"),
     ("eb_sessions", "last_error", "TEXT"),
+    ("recurring", "anchor_day", "INTEGER"),                 # day of month payments land on
+    ("recurring", "kind", "TEXT"),                          # income | expense | transfer (category kind)
+    ("recurring", "on_checking", "INTEGER NOT NULL DEFAULT 1"),  # paid from/to a checking account
 ]
 
 

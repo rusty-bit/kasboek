@@ -8,8 +8,20 @@
   <a class="btn" href="/import">Go to import</a>
 </div>
 {% else %}
+{% include "_alerts.html" %}
 <div class="card">
-  <p>{{ tx_count }} transactions imported. Free to spend, forecast and bills arrive in later milestones.</p>
+  <h2>Coming up</h2>
+  {% if upcoming %}
+  <table>
+    {% for s in upcoming %}
+    <tr><td class="nowrap">{{ s.next_date }}</td><td>{{ s.merchant[:50] }} <span class="small muted">{{ freq_label(s.frequency) }}</span></td>
+      <td class="num {{ 'neg' if s.average < 0 }}">{{ s.average|eur }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="small"><a href="/recurring">All recurring payments and contracts</a></p>
+  {% else %}
+  <p class="muted">No recurring payments found yet. They show up after a few months of history.</p>
+  {% endif %}
 </div>
 {% endif %}
 {% endblock %}

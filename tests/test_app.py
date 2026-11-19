@@ -248,3 +248,47 @@ def test_transactions_save_refreshes_other_rows_from_the_same_shop(client):
     assert f'id="tx-{b}" hx-swap-oob="true"' in r.text and f'id="tx-{c}"' not in r.text
     r = client.post(f"/transactions/{a}/rule", data={"match_text": "zaak q", "category": "hobbies"}, headers=HX)
     assert f'id="tx-{c}" hx-swap-oob="true"' in r.text
+
+
+# --- M3: recurring & contracts ---------------------------------------------------------------------------
+def _netflix(client):
+    acc = _new_account(client)
+    lines = "".join(f"03-{m:02d}-2026;-13,99;Netflix International\n" for m in (7, 8, 9, 10, 11))
+    upload(client, "x.csv", data=("Datum;Bedrag;Naam\n" + lines).encode(), account=str(acc))
+    with db.db() as con:
+        store_mod.refresh_recurring(con)
+        return con.execute("SELECT id FROM recurring").fetchone()["id"]
+
+
+from app import store as store_mod  # noqa: E402
+
+
+def test_recurring_page_lists_streams_and_monthly_total(client):
+    _netflix(client)
+    r = client.get("/recurring")
+    assert r.status_code == 200 and "Netflix International" in r.text and "€ -13,99" in r.text
+    assert "Recurring" in client.get("/").text            # in the nav
+
+
+def test_recurring_contract_saved_in_place(client):
+    rid = _netflix(client)
+    r = client.post(f"/recurring/{rid}/contract", headers=HX, data={
+        "is_contract": "1", "contract_end": "2027-06-30", "notice_days": "30", "notes": "family plan"})
+    assert r.status_code == 200 and "<html" not in r.text and f'id="rec-{rid}"' in r.text
+    assert "Cancel by 2027-05-31" in r.text
+    r = client.post(f"/recurring/{rid}/contract", headers=HX, data={"is_contract": "1", "contract_end": "31-06"})
+    assert r.status_code == 400 and "date" in r.text
+
+
+def test_recurring_not_a_bill_hides_it(client):
+    rid = _netflix(client)
+    r = client.post(f"/recurring/{rid}/dismiss", headers=HX, data={"dismissed": "1"})
+    assert r.status_code == 200 and r.text == ""
+    assert "Netflix International" not in client.get("/recurring").text
+    assert "Netflix International" in client.get("/recurring", params={"hidden": "1"}).text
+
+
+def test_overview_shows_upcoming_bills_and_alerts(client):
+    _netflix(client)
+    r = client.get("/")
+    assert "Coming up" in r.text and "Netflix International" in r.text

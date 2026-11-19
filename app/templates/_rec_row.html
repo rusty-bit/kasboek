@@ -1,0 +1,37 @@
+<tr id="rec-{{ s.id }}" class="{{ 'muted' if s.status == 'stopped' }}">
+  <td>
+    <div>{{ s.merchant[:60] }}</div>
+    <div class="small muted">{{ s.category_label or '–' }} · {{ freq_label(s.frequency) }} ·
+      {% if s.status == 'stopped' %}last {{ s.last_date }}{% else %}next {{ s.next_date }}{% endif %}
+      {% if s.status == 'early' %}<span class="src" title="Seen only {{ s.count }} times so far">new pattern</span>{% endif %}
+      {% if s.price_hike %}<span class="src src-default" title="Was {{ s.prev_typical|eur }}">price up</span>{% endif %}
+      {% if s.status == 'stopped' %}<span class="src">stopped?</span>{% endif %}
+    </div>
+    {% if s.is_contract %}
+    <div class="small {{ 'warn' if s.cancel_by }}">Contract{% if s.contract_end %} until {{ s.contract_end }}{% endif %}{% if s.cancel_by %} · <strong>Cancel by {{ s.cancel_by }}</strong>{% endif %}{% if s.notes %} · {{ s.notes }}{% endif %}</div>
+    {% endif %}
+    {% if error %}<div class="small bad">{{ error }}</div>{% endif %}
+    {% if saved %}<div class="small ok-text">✓ Saved.</div>{% endif %}
+  </td>
+  <td class="num {{ 'neg' if s.average < 0 }}">{{ s.average|eur }}</td>
+  <td class="num {{ 'neg' if s.monthly < 0 }}">{{ s.monthly|eur }}</td>
+  <td>
+    <details {{ 'open' if error }}>
+      <summary class="small">Contract</summary>
+      <form class="small" hx-post="/recurring/{{ s.id }}/contract" hx-target="#rec-{{ s.id }}" hx-swap="outerHTML"
+            method="post" action="/recurring/{{ s.id }}/contract" style="display:grid;gap:4px;margin-top:6px">
+        <label><input type="checkbox" name="is_contract" value="1" {{ 'checked' if s.is_contract }}> This is a contract</label>
+        <label>Ends <input type="date" name="contract_end" value="{{ s.contract_end or '' }}"></label>
+        <label>Notice <input type="number" name="notice_days" min="0" max="730" value="{{ s.notice_days if s.notice_days is not none else '' }}" style="width:5em"> days</label>
+        <input name="notes" value="{{ s.notes or '' }}" placeholder="Notes, e.g. contract number">
+        <button type="submit">Save</button>
+      </form>
+    </details>
+    <form hx-post="/recurring/{{ s.id }}/dismiss" hx-target="#rec-{{ s.id }}" hx-swap="outerHTML"
+          method="post" action="/recurring/{{ s.id }}/dismiss">
+      <input type="hidden" name="dismissed" value="{{ 0 if s.dismissed else 1 }}">
+      <button class="link small" type="submit"
+              title="{{ 'Show it again' if s.dismissed else 'Not a bill: leave it out of the lists and the forecast' }}">{{ 'Restore' if s.dismissed else 'Not a bill' }}</button>
+    </form>
+  </td>
+</tr>

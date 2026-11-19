@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Recurring · Kasboek{% endblock %}
+{% block content %}
+<h1>Recurring &amp; contracts</h1>
+{% include "_alerts.html" %}
+
+{% if not streams and not hidden %}
+<div class="card"><p>No recurring payments found yet. Kasboek needs at least three payments in a steady rhythm
+  (two for yearly bills). Import a few months of history and they show up here.</p></div>
+{% else %}
+<div class="card">
+  <p>Fixed costs <strong class="neg">{{ totals.expense|eur }}</strong> a month ·
+    regular income <strong>{{ totals.income|eur }}</strong> a month{% if totals.transfer %} ·
+    savings &amp; moves between accounts {{ totals.transfer|eur }} a month{% endif %}</p>
+  <p class="small muted">Found from the rhythm of your payments. Yearly and quarterly bills are counted per month.
+    Mark one as a contract to get a reminder before the cancellation deadline. "Not a bill" leaves it out.</p>
+</div>
+
+{% for title, group in sections if group %}
+<div class="card table-wrap">
+  <h2>{{ title }}</h2>
+  <table>
+    <tr><th>Name</th><th class="num">Each time</th><th class="num">Per month</th><th></th></tr>
+    {% for s in group %}{% include "_rec_row.html" %}{% endfor %}
+  </table>
+</div>
+{% endfor %}
+<p class="small muted">{% if hidden %}<a href="/recurring">Back to the list</a>{% elif n_hidden %}{{ n_hidden }} hidden as "not a bill" · <a href="/recurring?hidden=1">show them</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

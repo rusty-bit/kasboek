@@ -1,0 +1,6 @@
+{% if alerts %}
+<div class="card">
+  <h2>Heads up</h2>
+  {% for a in alerts %}<div class="{{ 'error' if a.level == 'bad' else 'notice' if a.level == 'warn' else 'ok' }}" style="margin-bottom:6px">{{ a.text }}</div>{% endfor %}
+</div>
+{% endif %}
