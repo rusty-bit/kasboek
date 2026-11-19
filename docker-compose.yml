@@ -5,7 +5,7 @@
 services:
   kasboek:
     build: .
-    image: kasboek:0.1.0
+    image: kasboek:0.2.0
     container_name: kasboek
     restart: unless-stopped
     env_file: stack.env

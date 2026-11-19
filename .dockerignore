@@ -13,3 +13,6 @@ docs
 *.pem
 .env
 stack.env
+.impeccable
+*.md
+portainer-stack.yml

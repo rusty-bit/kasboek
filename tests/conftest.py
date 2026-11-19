@@ -19,5 +19,6 @@ def client(data_dir):
 @pytest.fixture(autouse=True)
 def _no_background_sync(monkeypatch):
     monkeypatch.setenv("KASBOEK_SCHEDULER", "0")
-    for k in ("EB_APP_ID", "EB_KEY_PATH", "EB_REDIRECT_URL", "LLM_BASE_URL", "LLM_MODEL"):
+    for k in ("EB_APP_ID", "EB_KEY_PATH", "EB_REDIRECT_URL", "LLM_BASE_URL", "LLM_MODEL", "KASBOEK_USER",
+              "KASBOEK_PASSWORD"):
         monkeypatch.delenv(k, raising=False)

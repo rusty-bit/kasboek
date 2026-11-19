@@ -1,5 +1,6 @@
 """Kasboek web app: FastAPI + Jinja2 + HTMX. Run locally: DATA_DIR=./data uvicorn app.main:app --reload"""
 import asyncio
+import base64
 import logging
 import os
 import secrets
@@ -10,11 +11,11 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app import analytics, charts, search
+from app import analytics, backup, charts, search
 from app import recurring as rc
 from app import db, enablebanking, llm, store
 from app.fmt import eur
@@ -46,12 +47,24 @@ async def lifespan(app):
     with db.db() as con:
         store.relearn(con)
     log.info("Database ready at %s", db.db_path())
-    task = None
+    if not os.environ.get("KASBOEK_PASSWORD"):
+        log.warning("No KASBOEK_USER / KASBOEK_PASSWORD set: Kasboek is open to anyone who can reach it")
+    tasks = []
     if os.environ.get("KASBOEK_SCHEDULER", "1") != "0":
-        task = asyncio.create_task(_sync_loop())
+        tasks = [asyncio.create_task(_sync_loop()), asyncio.create_task(_backup_loop())]
     yield
-    if task:
-        task.cancel()
+    for t in tasks:
+        t.cancel()
+
+
+async def _backup_loop():
+    """Once a day (checked hourly): copy the database into DATA_DIR/backups, keep 14."""
+    while True:
+        try:
+            await asyncio.to_thread(backup.run)
+        except Exception:
+            log.exception("Backup failed")
+        await asyncio.sleep(3600)
 
 
 SYNC_HOURS = float(os.environ.get("SYNC_HOURS", "6"))   # PSD2 allows 4 unattended fetches a day per account
@@ -81,6 +94,28 @@ def _sync_job():
 
 app = FastAPI(title="Kasboek", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+
+OPEN_PATHS = {"/health"}   # Docker's healthcheck
+
+
+@app.middleware("http")
+async def household_login(request: Request, call_next):
+    """One shared household login (SPEC decision 1): HTTP Basic auth from KASBOEK_USER / KASBOEK_PASSWORD.
+    Without a password set (local development) the app is open. Use it behind HTTPS (Nginx Proxy Manager)."""
+    user, pw = os.environ.get("KASBOEK_USER", "kasboek"), os.environ.get("KASBOEK_PASSWORD", "")
+    if pw and request.url.path not in OPEN_PATHS:
+        given = request.headers.get("authorization", "")
+        ok = False
+        if given.lower().startswith("basic "):
+            try:
+                u, _, p = base64.b64decode(given[6:]).decode("utf-8").partition(":")
+                ok = secrets.compare_digest(u.encode(), user.encode()) & secrets.compare_digest(p.encode(), pw.encode())
+            except (ValueError, UnicodeDecodeError):
+                ok = False
+        if not ok:
+            return Response("Log in to Kasboek.", status_code=401,
+                            headers={"WWW-Authenticate": 'Basic realm="Kasboek", charset="UTF-8"'})
+    return await call_next(request)
 
 
 def render(request, name, ctx=None, status=200, con=None):
