@@ -46,9 +46,10 @@ def occurrences(s, start, end, late_ok=False):
     return out
 
 
-def free_to_spend(today, balance, streams):
-    """Finanzguru-style: checking balance + income still due this month - bills still due this month.
-    Only streams paid from or to a checking account count; moves between two checking accounts cancel out."""
+def free_to_spend(today, balance, streams, pots_due=0.0):
+    """Finanzguru-style: checking balance + income still due this month - bills still due this month - pot
+    plans not set aside yet this month (pots_due). Only streams paid from or to a checking account count;
+    moves between two checking accounts cancel out."""
     end = month_end(today)
     items = []
     for s in streams:
@@ -60,9 +61,10 @@ def free_to_spend(today, balance, streams):
     items.sort(key=lambda i: (i["date"], -i["amount"]))
     income = round(sum(i["amount"] for i in items if i["amount"] > 0), 2)
     bills = round(sum(i["amount"] for i in items if i["amount"] < 0), 2)
-    free = round(balance + income + bills, 2)
+    free = round(balance + income + bills - pots_due, 2)
     days_left = (end - today).days + 1
-    return {"balance": balance, "income_due": income, "bills_due": bills, "free": free, "days_left": days_left,
+    return {"balance": balance, "income_due": income, "bills_due": bills, "pots_due": round(pots_due, 2),
+            "free": free, "days_left": days_left,
             "per_day": round(free / days_left, 2), "items": items, "month_end": end}
 
 
@@ -94,11 +96,17 @@ def variable_spending(rows, stream_keys, today):
             "full_months": len(full), "months": months}
 
 
-def project_balance(today, balance, streams, daily_variable, days=90):
+def project_balance(today, balance, streams, daily_variable, days=90, due_now=0.0, monthly_set_aside=0.0):
     """Daily balance for the next `days` days: recurring payments on their dates, variable spending spread
-    evenly. Returns the series and its lowest point."""
+    evenly, pot plans set aside (what's still due this month today, the monthly plans on each 1st).
+    Returns the series and its lowest point."""
     end = today + timedelta(days=days - 1)
-    events = {}
+    events = {today: -due_now} if due_now else {}
+    if monthly_set_aside:
+        d = month_end(today) + timedelta(days=1)
+        while d <= end:
+            events[d] = events.get(d, 0.0) - monthly_set_aside
+            d = month_end(d) + timedelta(days=1)
     for s in streams:
         if s.get("on_checking", 1):
             for d in occurrences(s, today, end, late_ok=True):

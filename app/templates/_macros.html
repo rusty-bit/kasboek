@@ -1,5 +1,6 @@
-{% macro category_select(categories, selected, name="category", attrs="") %}
+{% macro category_select(categories, selected, name="category", attrs="", blank=None) %}
 <select name="{{ name }}" aria-label="Category" {{ attrs|safe }}>
+  {% if blank %}<option value="" {{ 'selected' if not selected }}>{{ blank }}</option>{% endif %}
   {% for kind, label in [("expense", "Spending"), ("income", "Income"), ("transfer", "Other")] %}
   <optgroup label="{{ label }}">
     {% for c in categories if c.kind == kind %}

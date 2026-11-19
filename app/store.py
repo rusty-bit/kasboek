@@ -720,10 +720,12 @@ def forecast(con, today=None):
     live_keys = {s["key"] for s in streams if s["status"] != "stopped"}
     var = fc.variable_spending(_checking_rows(con), live_keys, today)
     daily = round((var["typical"] or 0.0) / 30.4, 2)
+    pots_due, set_aside = _pot_plans(con, today)
     return {
         "today": today, "streams": streams, "balance": bal, "variable": var, "daily_variable": daily,
-        "free": fc.free_to_spend(today, bal["total"], streams),
-        "projection": fc.project_balance(today, bal["total"], streams, daily),
+        "free": fc.free_to_spend(today, bal["total"], streams, pots_due=pots_due),
+        "projection": fc.project_balance(today, bal["total"], streams, daily, due_now=pots_due,
+                                         monthly_set_aside=set_aside),
         "outlook": fc.outlook(today, streams, var["typical"] or 0.0),
         "sinking": fc.sinking_funds(streams),
         "low_threshold": low_balance_threshold(con),
@@ -743,6 +745,11 @@ def all_alerts(con, today=None, fc_ctx=None):
         out.insert(0, {"kind": "low_balance", "level": "bad" if p["lowest"] < 0 else "warn", "key": "balance",
                        "text": f"Your checking balance may drop to {eur(p['lowest'])} around "
                                f"{p['lowest_date'].isoformat()} (your limit is {eur(low)})."})
+    for b in budgets(con, today, with_suggestions=False):
+        if b["budget"] and b["status"]["tone"] == "over":
+            out.append({"kind": "budget", "level": "warn", "key": b["key"],
+                        "text": f"You're over your {b['label']} budget: {eur(b['status']['spent'])} of "
+                                f"{eur(b['budget'])} this month."})
     for s in eb_sessions(con):
         if s.get("valid_until"):
             days = (date.fromisoformat(s["valid_until"][:10]) - today).days
@@ -1020,3 +1027,231 @@ def joint_deposit_suggestions(con, today=None, days=365):
 
 
 COMPANY = re.compile(r"\b(stichting|b\.?v\.?|n\.?v\.?|gmbh|payments?|bank|belastingdienst|verzekering\w*|ltd|inc)\b", re.I)
+
+
+# --- goals: pots, habits, budgets (M5, SPEC 6.5-6.7) --------------------------------------------
+def _euro(raw, what, allow_zero=False, allow_negative=False):
+    from app.importers import parse_amount
+    v = raw if isinstance(raw, (int, float)) else parse_amount(str(raw or ""))
+    if v is None:
+        raise ValueError(f"Fill in {what} as an amount, for example 150 or 1.200,50.")
+    v = round(float(v), 2)
+    if (v == 0 and not allow_zero) or (v < 0 and not allow_negative):
+        raise ValueError(f"{what[0].upper() + what[1:]} has to be more than € 0.")
+    return v
+
+
+def _month(raw):
+    raw = (raw or "").strip()[:7]
+    if not raw:
+        return None
+    try:
+        date.fromisoformat(raw + "-01")
+    except ValueError:
+        raise ValueError("Pick the target month with the month picker.") from None
+    return raw
+
+
+def _pot_fields(name, target, target_date, monthly_plan, priority, auto):
+    name = re.sub(r"\s+", " ", name or "").strip()
+    if not name:
+        raise ValueError("Give the pot a name, for example Holiday.")
+    return (name[:40], _euro(target, "the target"), _month(target_date),
+            _euro(monthly_plan or 0, "the monthly plan", allow_zero=True),
+            int(priority) if str(priority) in ("1", "2", "3") else 2, 1 if auto else 0)
+
+
+def add_pot(con, name, target, target_date="", monthly_plan="", priority=2, auto=False):
+    """A savings goal. auto: filled by a standing order that Recurring already counts."""
+    cur = con.execute("INSERT INTO pots(name, target, target_date, monthly_plan, priority, auto) VALUES (?,?,?,?,?,?)",
+                      _pot_fields(name, target, target_date, monthly_plan, priority, auto))
+    return cur.lastrowid
+
+
+def update_pot(con, pid, name, target, target_date="", monthly_plan="", priority=2, auto=False):
+    con.execute("UPDATE pots SET name=?, target=?, target_date=?, monthly_plan=?, priority=?, auto=? WHERE id=?",
+                (*_pot_fields(name, target, target_date, monthly_plan, priority, auto), pid))
+
+
+def archive_pot(con, pid):
+    con.execute("UPDATE pots SET archived=1 WHERE id=?", (pid,))
+
+
+def add_pot_move(con, pid, amount, when=None, note="", source=""):
+    """Money set aside into a pot (or taken out: a negative amount)."""
+    if not con.execute("SELECT 1 FROM pots WHERE id=?", (pid,)).fetchone():
+        raise ValueError("That pot doesn't exist.")
+    v = _euro(amount, "the amount", allow_negative=True)
+    when = (when or "").strip() or date.today().isoformat()
+    try:
+        date.fromisoformat(when)
+    except ValueError:
+        raise ValueError("Pick the date with the date picker.") from None
+    con.execute("INSERT INTO pot_moves(pot_id, date, amount, note, source) VALUES (?,?,?,?,?)",
+                (pid, when, v, (note or "").strip()[:80], source))
+
+
+def _pots(con, today):
+    from app import goals
+    month = today.strftime("%Y-%m")
+    out = []
+    for p in con.execute("SELECT * FROM pots WHERE archived=0 ORDER BY priority, COALESCE(target_date, '9999'), id"):
+        p = dict(p)
+        saved, moved = con.execute(
+            "SELECT COALESCE(SUM(amount), 0), COALESCE(SUM(CASE WHEN substr(date,1,7)=? THEN amount END), 0)"
+            " FROM pot_moves WHERE pot_id=?", (month, p["id"])).fetchone()
+        p["status"] = goals.pot_status(p, saved, today)
+        p["moved_this_month"] = round(moved, 2)
+        p["moves"] = [dict(m) for m in con.execute(
+            "SELECT date, amount, note FROM pot_moves WHERE pot_id=? ORDER BY date DESC, id DESC LIMIT 5", (p["id"],))]
+        out.append(p)
+    return out
+
+
+def goal_pots(con, today=None):
+    return _pots(con, today or date.today())
+
+
+def _pot_plans(con, today):
+    """(still to set aside this month, the monthly plans) for free-to-spend and the 90-day line."""
+    from app import goals
+    pots = _pots(con, today)
+    due = goals.plans_due(pots, {p["id"]: p["moved_this_month"] for p in pots}, {p["id"]: p["status"] for p in pots})
+    monthly = round(sum(p["monthly_plan"] for p in pots if not p["auto"] and not p["status"]["done"]), 2)
+    return due, monthly
+
+
+def _first_date(con):
+    return con.execute("SELECT MIN(date) FROM transactions").fetchone()[0]
+
+
+def add_habit(con, name, category="", match_text="", target="", pot_id=None):
+    """'Spend less on X': a category and/or a word in the name, a monthly target, optionally a pot."""
+    name = re.sub(r"\s+", " ", name or "").strip()
+    if not name:
+        raise ValueError("Give the habit a name, for example Less takeaway.")
+    if not (category or (match_text or "").strip()):
+        raise ValueError("Pick a category or a word the name contains.")
+    cid = _cat_id(con, category) if category else None
+    pid = int(pot_id) if str(pot_id or "0") not in ("", "0") else None
+    cur = con.execute("INSERT INTO habits(name, category_id, match_text, target, pot_id) VALUES (?,?,?,?,?)",
+                      (name[:40], cid, (match_text or "").strip()[:60], _euro(target, "the monthly target"), pid))
+    return cur.lastrowid
+
+
+def delete_habit(con, hid):
+    con.execute("DELETE FROM habits WHERE id=?", (hid,))
+
+
+def _habit_booked(con, hid, month):
+    return con.execute("SELECT 1 FROM pot_moves WHERE source=?", (f"habit:{hid}:{month}",)).fetchone() is not None
+
+
+def _habits(con, today, rows=None):
+    from app import goals
+    rows = analytics_rows(con) if rows is None else rows
+    first = _first_date(con)
+    out = []
+    for h in con.execute("SELECT h.*, c.key AS category_key, c.label AS category_label, p.name AS pot_name"
+                         " FROM habits h LEFT JOIN categories c ON c.id = h.category_id"
+                         " LEFT JOIN pots p ON p.id = h.pot_id AND p.archived = 0 ORDER BY h.id"):
+        h = dict(h)
+        spend = goals.month_spend(rows, {h["category_key"]} if h["category_key"] else None, h["match_text"])
+        h["status"] = goals.habit_status(spend, h["target"], today, first_date=first)
+        s = goals.habit_suggestion(spend, today, first_date=first) if h["pot_name"] else None
+        if s and (_habit_booked(con, h["id"], s["month"]) or dbm.setting(con, f"habit_skip:{h['id']}:{s['month']}")):
+            s = None
+        h["suggestion"] = s
+        out.append(h)
+    return out
+
+
+def book_habit_saving(con, hid, today=None):
+    """'Move it to the pot': books last month's saving as a pot move, once. Returns the amount booked."""
+    today = today or date.today()
+    h = next((h for h in _habits(con, today) if h["id"] == hid), None)
+    if not h or not h["suggestion"]:
+        return 0.0
+    s = h["suggestion"]
+    add_pot_move(con, h["pot_id"], s["saved"], when=today.isoformat(), source=f"habit:{hid}:{s['month']}",
+                 note=f"{h['name']}: {eur(s['saved'])} less than usual in {s['month']}")
+    log.info("Habit %s: booked %s into pot %s", hid, s["saved"], h["pot_id"])
+    return s["saved"]
+
+
+def dismiss_habit_saving(con, hid, today=None):
+    today = today or date.today()
+    h = next((h for h in _habits(con, today) if h["id"] == hid), None)
+    if h and h["suggestion"]:
+        dbm.set_setting(con, f"habit_skip:{hid}:{h['suggestion']['month']}", "1")
+
+
+def set_budget(con, category, monthly):
+    """A monthly budget for a spending category; empty or 0 removes it."""
+    cid = _cat_id(con, category)
+    v = _euro(monthly or 0, "the budget", allow_zero=True)
+    if v == 0:
+        con.execute("DELETE FROM budgets WHERE category_id=?", (cid,))
+    else:
+        con.execute("INSERT INTO budgets(category_id, monthly) VALUES (?,?)"
+                    " ON CONFLICT(category_id) DO UPDATE SET monthly=excluded.monthly", (cid, v))
+
+
+def budgets(con, today, rows=None, with_suggestions=True):
+    """Spending categories with a budget and (with_suggestions) those with spending in recent full months:
+    this month's status against the budget, and the suggested budget."""
+    from app import goals
+    set_ = {r["category_id"]: r["monthly"] for r in con.execute("SELECT * FROM budgets")}
+    if not set_ and not with_suggestions:
+        return []
+    rows = analytics_rows(con) if rows is None else rows
+    first = _first_date(con)
+    per_cat = {}
+    for t in rows:
+        if t.get("category_kind") == "expense":
+            per_cat.setdefault(t["category_key"], []).append(t)
+    out = []
+    for c in categories(con):
+        if c["kind"] != "expense":
+            continue
+        budget = set_.get(c["id"])
+        if not budget and not with_suggestions:
+            continue
+        spend = goals.month_spend(per_cat.get(c["key"], []))
+        suggested = goals.suggest_budget(spend, today, first_date=first) if with_suggestions else None
+        if not budget and not suggested:
+            continue
+        spent = spend.get(today.strftime("%Y-%m"), 0.0)
+        out.append({"key": c["key"], "label": c["label"], "grp": c["grp"], "budget": budget, "suggested": suggested,
+                    "status": goals.budget_status(spent, budget, today) if budget else {"spent": round(spent, 2)}})
+    out.sort(key=lambda b: (b["budget"] is None, -(b["budget"] or b["suggested"] or 0)))
+    return out
+
+
+def use_suggested_budgets(con, today=None):
+    """Give every spending category without a budget its suggested one. Returns how many were set."""
+    today = today or date.today()
+    n = 0
+    for b in budgets(con, today):
+        if not b["budget"] and b["suggested"]:
+            set_budget(con, b["key"], b["suggested"])
+            n += 1
+    return n
+
+
+def goals_page(con, today=None):
+    """Pots with their status and whether the plans fit, habits, budgets."""
+    from app import goals
+    today = today or date.today()
+    rows = analytics_rows(con)
+    pots = _pots(con, today)
+    streams = recurring(con)
+    live = {s["key"] for s in streams if s["status"] != "stopped"}
+    var = fc.variable_spending(_checking_rows(con), live, today)
+    surplus = None          # typical month's income - fixed costs - day-to-day spending; unknown without history
+    if var["typical"] is not None:
+        months = fc.outlook(today, streams, var["typical"])
+        surplus = round(sum(m["income"] + m["fixed"] + m["variable"] for m in months) / len(months), 2)
+    due, _ = _pot_plans(con, today)
+    return {"today": today, "pots": pots, "feasibility": goals.feasibility(pots, surplus), "pots_due": due,
+            "habits": _habits(con, today, rows), "budgets": budgets(con, today, rows)}

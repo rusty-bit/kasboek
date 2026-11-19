@@ -149,21 +149,37 @@ per_day = free ÷ days left (today counts)
 - **Sinking funds:** for each quarterly or yearly bill, monthly reserve = average ÷ (3 or 12). Show the total as "set aside €X/month for irregular bills" (car insurance, road tax, BsGW, ANWB…).
 - **Seasonal hints (v2):** for each coming month, a category whose spend in the same month last year was more than 1.5× its median month and more than €100 → "Last December you spent €640 on gifts".
 
-### 6.5 Pots (savings goals)
-- Fields: name, icon, target, target month, monthly plan, priority. Saved amount = Σ `pot_moves`.
+### 6.5 Pots (savings goals) (built 2026-11-19, `app/goals.py`, Goals page)
+- Fields: name, target, target month, monthly plan, priority, `auto` (filled by a standing order that Recurring
+  already counts). Saved amount = Σ `pot_moves` (a negative move takes money out).
+- Free to spend subtracts this month's plans not booked yet (`pots_due`); the 90-day line subtracts them today
+  and the monthly plans on each 1st. `auto` pots are left out of both, so a standing order isn't counted twice.
 - `needed_per_month = (target − saved) ÷ max(1, months until target)`. On track if the plan ≥ needed. Show the projected finish date at the current plan.
-- **Feasibility:** total pot plans vs typical monthly surplus (median income − fixed − variable). If they don't fit, say so and order the pots by priority and date.
+- **Feasibility:** total pot plans vs typical monthly surplus (income − fixed − typical variable, averaged over the
+  12-month outlook). If they don't fit, say so and order the pots by priority and date. Without a full month of
+  day-to-day spending the page says it can't tell yet.
 - v2: link a pot to a real savings account (Knab spaarrekening etc.) so the pots on that account always add up to its balance.
 
 ### 6.6 Habits ("reduce spending on X")
 - Habit = category and/or name match + monthly target + optional pot.
 - `baseline` = median of the last 3 full months. This month: spent so far, end-of-month estimate (spent ÷ days elapsed × days in month), status.
 - At month end, if spend < baseline: "You spent €85 less on takeaway than usual. Move it to *Holiday*?" One click books a `pot_move`. This combines Rocket Money's "autopilot savings" with habit change, and it's the feature none of the reference apps have.
+- Booked once per habit and month (`pot_moves.source = 'habit:<id>:<YYYY-MM>'`); "Not this time" skips that month.
 
 ### 6.7 Budgets
-- broke's `suggest` / `wellOff` / `tone` / `perDay` with € steps. A "Use suggested budgets" button for categories without a budget.
+- Per spending category, monthly. Suggested = median of the last 3 full months, rounded up to € 10 (none when that is
+  € 0). Tone: ok while spending keeps pace with the month, warn ahead of pace, over past the budget (also an alert);
+  per day = what's left ÷ days left. A "Use suggested budgets" button for categories without a budget.
 
-### 6.8 Tags (requested by the owner, 2026-11-19; planned, not built)
+### 6.7b Categories (built 2026-11-19, Categories page)
+- Add your own (key made from the name), rename any, choose the dashboard group of a spending category
+  (`categories.grp`; NULL = the built-in group). Built-in categories can't be deleted; your own can, and their
+  payments, rules, learned shops, budget, habits and analyses move to the category you pick (hand-set stays hand-set).
+
+### 6.8 Tags (requested by the owner, 2026-11-19; ON HOLD, owner chose M5 + own categories first)
+Started work is in `git stash` "M5b tags WIP" (`app/tags.py` + tests). Tag filters return a set of bookings (any /
+all of the tags), so a booking with two selected tags counts once; a per-tag breakdown shows a separate
+"together, counted once" line.
 Categories stay: exactly one per booking, so totals, the donut, budgets and the forecast count every euro once.
 Tags add the cross-cutting view: any number per booking, answering "for whom / for what" (`kids`, `animals`,
 `garden`, `Italy 2025`, `bike`, `renovation`, `side-business`).
@@ -216,8 +232,8 @@ Does each person carry their part of the household costs? Two people (names in s
 | M2 | Categorisation pipeline + transactions page + queue | ≥ 85 % of a real month categorised without manual work; a re-categorised merchant sticks |
 | M3 | Recurring + contracts + alerts | Known subscriptions all found; no grocery store detected as a bill |
 | M4 | Free-to-spend, 90-day and 12-month forecast, sinking funds | Hand-checked against one real month |
-| M5 | Pots, habits, budgets | Habit month-end suggestion books a pot move |
-| M5b | Tags (§6.8): per-booking tags, bulk tagging, rule/memory tags, tag filters and analyses | "What did the kids cost this year" works across categories without double-counting totals |
+| M5 | Pots, habits, budgets (done 2026-11-19) + your own categories | Habit month-end suggestion books a pot move |
+| M5b | (on hold) Tags (§6.8): per-booking tags, bulk tagging, rule/memory tags, tag filters and analyses | "What did the kids cost this year" works across categories without double-counting totals |
 | M6 | Enable Banking connector + scheduler + consent alert | All three banks sync for a week unattended |
 | M7 | HA sensor, ntfy, backups, deploy on the NAS via Portainer | Runs on the NAS from absolute `/volume1/Docker/kasboek` paths and survives a reboot |
 | v2 | Seasonal hints, savings-account-linked pots, weekly check-in, FinTS fallback | — |

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_macros.html" import category_select %}
+{% block title %}Goals · Kasboek{% endblock %}
+{% block content %}
+<h1>Goals</h1>
+{% if error %}<div class="error card">{{ error }}</div>{% endif %}
+{% set fe = g.feasibility %}
+
+<div class="dash">
+  <div class="dash-head" id="pots" style="grid-column: 1 / -1"><h2>Savings pots</h2></div>
+  <p class="small muted" style="grid-column: 1 / -1; margin:0">A pot is money you set aside for something. Book a move when you've actually put
+    the money aside (for example moved it to savings). Free to spend keeps this month's plans aside until you've booked them
+    {%- if g.pots_due %}: still <strong>{{ g.pots_due|eur }}</strong> this month{% endif %}.</p>
+
+  {% if g.pots %}
+  <section class="card" aria-label="Do the plans fit">
+    {% if fe.surplus is none %}
+    <p class="muted" style="margin:0">Can't tell yet whether the monthly plans fit: that needs a full month of day-to-day spending.</p>
+    {% elif fe.fits %}
+    <div class="ok">Your monthly plans ({{ fe.plans|eur }}) fit in what's typically left each month ({{ fe.surplus|eur }}).</div>
+    {% else %}
+    <div class="notice">Your monthly plans ({{ fe.plans|eur }}) are {{ fe.short|eur }} more than what's typically left each month
+      ({{ fe.surplus|eur }}). In order of priority, these fit:
+      {% for p in fe.order if p.fits %}{{ p.name }}{{ ', ' if not loop.last }}{% else %}none{% endfor %}.</div>
+    {% endif %}
+    <p class="small muted" style="margin:8px 0 0">Typically left = expected income − fixed costs − typical day-to-day spending,
+      averaged over the next 12 months (<a href="/forecast">Forecast</a>).</p>
+  </section>
+  {% endif %}
+
+  {% for p in g.pots %}{% set s = p.status %}
+  <section class="card w4" id="pot-{{ p.id }}" aria-labelledby="pot-h-{{ p.id }}">
+    <div class="tile-title"><span class="ic">{{ icon('wallet') }}</span><span id="pot-h-{{ p.id }}">{{ p.name }}</span>
+      <span class="chip small" style="margin-left:auto">{{ {1: 'high', 2: 'normal', 3: 'nice to have'}[p.priority] }}</span></div>
+    <div class="big">{{ s.saved|eur }} <span class="unit">of {{ p.target|eur }}</span></div>
+    <div class="meter" role="img" aria-label="{{ (s.progress * 100)|round|int }} % saved"><i class="fill-pot" style="width:{{ (s.progress * 100)|round(1) }}%"></i></div>
+    <div class="sub">
+      {% if s.done %}{{ icon('check', 14) }} Full.
+      {% else %}
+        {% if p.monthly_plan %}Plan {{ p.monthly_plan|eur }} a month{% if p.auto %} (standing order){% endif %}{% else %}No monthly plan{% endif %}
+        {% if s.needed_per_month is not none %} · needs {{ s.needed_per_month|eur }} a month to reach it by {{ month_name(p.target_date ~ '-01') }}{% endif %}
+      {% endif %}
+    </div>
+    {% if not s.done %}
+    <p class="small" style="margin:8px 0 0">
+      {% if s.on_track %}<span class="ok-text">{{ icon('check', 14) }} On track</span>{% elif s.on_track is sameas false %}<span class="warn">Behind: the plan doesn't reach the target in time</span>{% endif %}
+      {% if s.finish %}{{ ' · ' if s.on_track is not none }}at this plan full in {{ month_name(s.finish ~ '-01') }}{% endif %}
+    </p>
+    {% endif %}
+    <form method="post" action="/goals/pots/{{ p.id }}/move" class="filters" style="margin-top:12px">
+      <select name="direction" aria-label="Into or out of the pot"><option value="in">Put in</option><option value="out">Take out</option></select>
+      <input name="amount" placeholder="€" size="7" required aria-label="Amount" value="{{ (p.monthly_plan - p.moved_this_month)|plain if p.monthly_plan > p.moved_this_month and not p.auto else '' }}">
+      <input type="date" name="date" value="{{ g.today }}" aria-label="Date">
+      <input name="note" placeholder="note" size="10" maxlength="80" aria-label="Note">
+      <button type="submit">Book</button>
+    </form>
+    {% if p.moves %}
+    <details class="small" style="margin-top:8px"><summary class="muted">Last moves{% if p.moved_this_month %} · {{ p.moved_this_month|eur }} this month{% endif %}</summary>
+      <ul class="catlist">{% for m in p.moves %}<li><span>{{ m.date }}{% if m.note %} · {{ m.note }}{% endif %}</span><span class="num {{ 'neg' if m.amount < 0 }}">{{ m.amount|eur }}</span></li>{% endfor %}</ul>
+    </details>
+    {% endif %}
+    <details class="small" style="margin-top:6px"><summary class="muted">Edit</summary>
+      <form method="post" action="/goals/pots/{{ p.id }}" class="form-grid">
+        <label>Name<input name="name" value="{{ p.name }}" maxlength="40" required></label>
+        <div class="row">
+          <label>Target €<input name="target" value="{{ p.target|plain }}" required></label>
+          <label>By (optional)<input type="month" name="target_date" value="{{ p.target_date or '' }}"></label>
+        </div>
+        <div class="row">
+          <label>Monthly plan €<input name="monthly_plan" value="{{ p.monthly_plan|plain }}"></label>
+          <label>Priority<select name="priority">{% for v, l in [(1, 'high'), (2, 'normal'), (3, 'nice to have')] %}<option value="{{ v }}" {{ 'selected' if p.priority == v }}>{{ l }}</option>{% endfor %}</select></label>
+        </div>
+        <label class="radio"><input type="checkbox" name="auto" value="1" {{ 'checked' if p.auto }}> Filled by a standing order (already in Recurring)</label>
+        <div><button type="submit">Save</button></div>
+      </form>
+      <form method="post" action="/goals/pots/{{ p.id }}/archive" style="margin-top:8px"><button class="link" type="submit">Archive this pot</button></form>
+    </details>
+  </section>
+  {% endfor %}
+
+  <section class="card w4 new-analysis">
+    <details {{ 'open' if not g.pots }}>
+      <summary>{{ icon('plus', 18) }} New pot</summary>
+      <form method="post" action="/goals/pots" class="form-grid">
+        <label>Name<input name="name" required maxlength="40" placeholder="Holiday"></label>
+        <div class="row">
+          <label>Target €<input name="target" required placeholder="1.200"></label>
+          <label>By (optional)<input type="month" name="target_date"></label>
+        </div>
+        <div class="row">
+          <label>Monthly plan €<input name="monthly_plan" placeholder="200"></label>
+          <label>Priority<select name="priority"><option value="1">high</option><option value="2" selected>normal</option><option value="3">nice to have</option></select></label>
+        </div>
+        <label class="radio"><input type="checkbox" name="auto" value="1"> Filled by a standing order (already in Recurring)</label>
+        <div><button type="submit">Add pot</button></div>
+      </form>
+    </details>
+  </section>
+
+  <div class="dash-head" id="habits" style="grid-column: 1 / -1"><h2>Habits</h2></div>
+  <p class="small muted" style="grid-column: 1 / -1; margin:0">Spend less on something: set a monthly target. When a month ends below
+    your usual, Kasboek offers to move the difference into a pot.</p>
+
+  {% for h in g.habits %}{% set s = h.status %}
+  <section class="card w4" aria-labelledby="hab-h-{{ h.id }}">
+    <div class="tile-title"><span class="ic">{{ icon('trend') }}</span><span id="hab-h-{{ h.id }}">{{ h.name }}</span>
+      <form method="post" action="/goals/habits/{{ h.id }}/delete" style="margin-left:auto">
+        <button class="analysis-del" type="submit" aria-label="Delete habit {{ h.name }}" title="Delete">{{ icon('x', 16) }}</button></form></div>
+    <div class="big">{{ s.spent|eur }} <span class="unit">of {{ s.target|eur }} this month</span></div>
+    <div class="meter" role="img" aria-label="{{ s.status }}">
+      <i class="tone-{{ 'over' if s.status == 'over' else 'warn' if s.status == 'at_risk' else 'ok' }}" style="width:{{ [s.spent / s.target * 100, 100]|min|round(1) }}%"></i></div>
+    <div class="sub">
+      {% if s.status == 'over' %}<span class="bad">Over the target</span>
+      {% elif s.status == 'at_risk' %}<span class="warn">At this pace about {{ s.estimate|eur }} by month end</span>
+      {% else %}<span class="ok-text">{{ icon('check', 14) }} On track</span> · about {{ s.estimate|eur }} by month end{% endif %}
+      · {% if s.baseline is not none %}usually {{ s.baseline|eur }}{% else %}no full month yet to compare{% endif %}
+    </div>
+    <div class="chips" style="margin-top:10px">
+      {% if h.category_label %}<span class="chip">{{ h.category_label }}</span>{% endif %}
+      {% if h.match_text %}<span class="chip">{{ icon('search', 14) }} “{{ h.match_text }}”</span>{% endif %}
+      {% if h.pot_name %}<span class="chip">{{ icon('wallet', 14) }} → {{ h.pot_name }}</span>{% endif %}
+    </div>
+    {% if h.suggestion %}{% set sg = h.suggestion %}
+    <div class="ok" style="margin-top:12px">In {{ month_name(sg.month ~ '-01') }} you spent {{ sg.spent|eur }}, {{ sg.saved|eur }} less than usual
+      ({{ sg.baseline|eur }}). Move it to <strong>{{ h.pot_name }}</strong>?
+      <div class="filters" style="margin-top:8px">
+        <form method="post" action="/goals/habits/{{ h.id }}/book"><button type="submit">Move {{ sg.saved|eur }}</button></form>
+        <form method="post" action="/goals/habits/{{ h.id }}/skip"><button class="link" type="submit">Not this time</button></form>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <section class="card w4 new-analysis">
+    <details {{ 'open' if not g.habits }}>
+      <summary>{{ icon('plus', 18) }} New habit</summary>
+      <form method="post" action="/goals/habits" class="form-grid">
+        <label>Name<input name="name" required maxlength="40" placeholder="Less takeaway"></label>
+        <label>Category (optional){{ category_select(categories|selectattr('kind', 'equalto', 'expense')|list, '', blank='any category') }}</label>
+        <label>Name contains (optional)<input name="match_text" maxlength="60" placeholder="thuisbezorgd"></label>
+        <div class="row">
+          <label>Monthly target €<input name="target" required placeholder="150"></label>
+          <label>Saving goes to<select name="pot_id"><option value="">no pot</option>{% for p in g.pots %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
+        </div>
+        <div><button type="submit">Add habit</button></div>
+      </form>
+    </details>
+  </section>
+
+  <div class="dash-head" id="budgets" style="grid-column: 1 / -1"><h2>Budgets</h2>
+    {% if g.budgets|selectattr('budget', 'none')|selectattr('suggested')|list %}
+    <form method="post" action="/goals/budgets/suggested"><button type="submit">Use suggested budgets</button></form>
+    {% endif %}
+  </div>
+  <section class="card" aria-label="Budgets this month">
+    <p class="small muted" style="margin-top:0">A monthly limit per spending category. The marker shows where you'd be if you spent evenly through the
+      month. The suggestion is your usual month (median of the last 3 full months), rounded up. Empty a budget to remove it.</p>
+    {% if g.budgets %}
+    <ul class="budget-list">
+      {% for b in g.budgets %}{% set s = b.status %}
+      <li>
+        <span class="b-name"><span class="dot fill-g{{ group_slot[b.grp] }}"></span>{{ b.label }}</span>
+        {% if b.budget %}
+        <span class="b-num num">{{ s.spent|eur }} of {{ b.budget|eur }}</span>
+        <span class="meter b-bar" role="img" aria-label="{{ s.tone }}"><i class="tone-{{ s.tone }}" style="width:{{ (s.share * 100)|round(1) }}%"></i>
+          <b class="pace" style="left:{{ [s.pace / b.budget * 100, 100]|min|round(1) }}%"></b></span>
+        <span class="b-note small">
+          {% if s.tone == 'over' %}<span class="bad">{{ s.left|abs|eur }} over</span>
+          {% elif s.tone == 'warn' %}<span class="warn">ahead of pace</span> · {{ s.per_day|eur }} a day left
+          {% else %}<span class="ok-text">{{ icon('check', 14) }} on pace</span> · {{ s.per_day|eur }} a day left{% endif %}
+        </span>
+        {% else %}
+        <span class="b-num num muted">{{ s.spent|eur }} this month</span>
+        <span class="b-bar"></span>
+        <span class="b-note small muted">usually about {{ b.suggested|eur }}</span>
+        {% endif %}
+        <form method="post" action="/goals/budgets" class="b-form">
+          <input type="hidden" name="category" value="{{ b.key }}">
+          <input name="monthly" size="6" value="{{ b.budget|plain }}" placeholder="{{ b.suggested|int if b.suggested else '€' }}"
+                 aria-label="Monthly budget for {{ b.label }}">
+          <button type="submit" class="small">Set</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No spending yet to base budgets on.</p>
+    {% endif %}
+    <form method="post" action="/goals/budgets" class="filters" style="margin-top:12px">
+      <span class="small muted">Another category:</span>
+      {{ category_select(categories|selectattr('kind', 'equalto', 'expense')|list, 'other') }}
+      <input name="monthly" size="6" placeholder="€" required aria-label="Monthly budget">
+      <button type="submit">Set budget</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

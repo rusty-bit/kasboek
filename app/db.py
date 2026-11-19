@@ -220,6 +220,8 @@ MIGRATIONS = [
     ("transactions", "personal_for", "TEXT NOT NULL DEFAULT ''"),  # only for this person (fair share)
     ("categories", "grp", "TEXT"),                          # dashboard group; NULL = the built-in one
     ("categories", "custom", "INTEGER NOT NULL DEFAULT 0"),  # added by you (can be deleted)
+    ("pots", "auto", "INTEGER NOT NULL DEFAULT 0"),          # filled by a standing order Recurring already counts
+    ("pot_moves", "source", "TEXT NOT NULL DEFAULT ''"),     # 'habit:<id>:<YYYY-MM>' for a habit's saving
 ]
 
 

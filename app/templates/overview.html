@@ -28,7 +28,8 @@
     <div class="hero {{ 'neg' if f.free < 0 }}">{{ f.free|eur }}</div>
     <div class="sub">until {{ f.month_end }} · <strong style="color:var(--ink)">{{ f.per_day|eur }}</strong> a day for {{ f.days_left }} days</div>
     <p class="small muted" style="margin:12px 0 0">Checking balance {{ fc.balance.total|eur }}{% if fc.balance.as_of %} (as of {{ fc.balance.as_of }}){% endif %}
-      + income still due {{ f.income_due|eur }} − bills still due {{ f.bills_due|abs|eur }}. <a href="/forecast">Details</a></p>
+      + income still due {{ f.income_due|eur }} − bills still due {{ f.bills_due|abs|eur }}{% if f.pots_due %}
+      − pot plans still to set aside {{ f.pots_due|eur }} (<a href="/goals#pots">Goals</a>){% endif %}. <a href="/forecast">Details</a></p>
     {% if fc.balance.missing %}<p class="small warn" style="margin:6px 0 0">No balance known for {{ fc.balance.missing|join(', ') }}: counted as € 0,00.</p>{% endif %}
     {% if fc.variable.typical is none %}
     <p class="small warn" style="margin:6px 0 0">Day-to-day spending: not enough history yet (needs one full month), so the forecast leaves it out.</p>
@@ -43,6 +44,36 @@
     <div class="tile-title"><span class="ic">{{ icon('trend') }}</span><span id="line-h">Checking balance, next 90 days</span></div>
     {% include "_balance_chart.html" %}
   </section>
+  {% endif %}
+
+  {% if pots or budgets %}
+  {% if pots %}
+  <section class="card {{ 'w4' if budgets else '' }}" aria-labelledby="pots-h">
+    <div class="tile-title"><span class="ic">{{ icon('wallet') }}</span><span id="pots-h">Savings pots</span>
+      <a class="small" href="/goals#pots" style="margin-left:auto">Goals</a></div>
+    <ul class="catlist">
+      {% for p in pots %}{% set s = p.status %}
+      <li><span>{{ p.name }}{% if s.on_track is sameas false %} <span class="small warn">· behind</span>{% elif s.done %} <span class="small ok-text">· full</span>{% endif %}</span>
+        <span class="num">{{ s.saved|eur }} <span class="muted small">of {{ p.target|eur }}</span></span>
+        <span class="bar"><i class="fill-g1" style="width:{{ (s.progress * 100)|round(1) }}%"></i></span></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% if budgets %}
+  <section class="card {{ 'w8' if pots else '' }}" aria-labelledby="bud-h">
+    <div class="tile-title"><span class="ic">{{ icon('bars') }}</span><span id="bud-h">Budgets this month</span>
+      <a class="small" href="/goals#budgets" style="margin-left:auto">Goals</a></div>
+    <ul class="catlist">
+      {% for b in budgets %}{% set s = b.status %}
+      <li><span>{{ b.label }} <span class="small {{ 'bad' if s.tone == 'over' else 'warn' if s.tone == 'warn' else 'ok-text' }}">· {{ 'over' if s.tone == 'over' else 'ahead of pace' if s.tone == 'warn' else 'on pace' }}</span></span>
+        <span class="num">{{ s.spent|eur }} <span class="muted small">of {{ b.budget|eur }}</span></span>
+        <span class="meter b-bar" style="margin:2px 0 0;height:4px"><i class="tone-{{ s.tone }}" style="width:{{ (s.share * 100)|round(1) }}%"></i>
+          <b class="pace" style="left:{{ [s.pace / b.budget * 100, 100]|min|round(1) }}%"></b></span></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
   {% endif %}
 
   <div id="spending" class="dash" style="grid-column: 1 / -1">

@@ -26,6 +26,7 @@ log = logging.getLogger("kasboek")
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["eur"] = eur
+templates.env.filters["plain"] = lambda v: "" if v is None else f"{float(v):.2f}".rstrip("0").rstrip(".")   # 480.0 -> 480 in inputs
 templates.env.globals["bank_label"] = store.bank_label
 templates.env.globals["kinds"] = store.KINDS
 
@@ -185,6 +186,8 @@ def overview(request: Request, period: str = "", analysis_error: str = ""):
             ctx.update(_dashboard_charts(d))
             ctx["expense_categories"] = [c for c in store.categories(con) if c["kind"] == "expense"]
             ctx["analysis_error"] = analysis_error[:200]
+            ctx["pots"] = store.goal_pots(con, f["today"])
+            ctx["budgets"] = store.budgets(con, f["today"], with_suggestions=False)
         return render(request, "overview.html", ctx, con=con)
 
 
@@ -732,6 +735,88 @@ def _num(s):
         return float(s) if s else None
     except ValueError:
         raise ValueError(f"'{s}' is not an amount.") from None
+
+
+# --- goals: pots, habits, budgets (M5) --------------------------------------------------------------
+def _goals_page(request, con, status=200, **ctx):
+    g = store.goals_page(con)
+    return render(request, "goals.html", {"page": "goals", "g": g, "groups": analytics.GROUP_LABEL,
+                                          "group_slot": GROUP_SLOT, **ctx}, status, con)
+
+
+def _goals_do(request, fn, anchor):
+    """Run a change; on a ValueError show the page again with the message, else back to the section."""
+    with db.db() as con:
+        try:
+            fn(con)
+        except ValueError as e:
+            return _goals_page(request, con, 400, error=str(e))
+    return RedirectResponse(f"/goals#{anchor}", status_code=303)
+
+
+@app.get("/goals")
+def goals_page(request: Request):
+    with db.db() as con:
+        return _goals_page(request, con)
+
+
+@app.post("/goals/pots")
+def pot_add(request: Request, name: str = Form(""), target: str = Form(""), target_date: str = Form(""),
+            monthly_plan: str = Form(""), priority: str = Form("2"), auto: str = Form("")):
+    return _goals_do(request, lambda con: store.add_pot(con, name, target, target_date, monthly_plan, priority,
+                                                        bool(auto)), "pots")
+
+
+@app.post("/goals/pots/{pid}")
+def pot_edit(request: Request, pid: int, name: str = Form(""), target: str = Form(""), target_date: str = Form(""),
+             monthly_plan: str = Form(""), priority: str = Form("2"), auto: str = Form("")):
+    return _goals_do(request, lambda con: store.update_pot(con, pid, name, target, target_date, monthly_plan,
+                                                           priority, bool(auto)), f"pot-{pid}")
+
+
+@app.post("/goals/pots/{pid}/move")
+def pot_move(request: Request, pid: int, amount: str = Form(""), when: str = Form("", alias="date"), note: str = Form(""),
+             direction: str = Form("in")):
+    amt = amount.strip()
+    if direction == "out" and amt and not amt.startswith("-"):
+        amt = "-" + amt
+    return _goals_do(request, lambda con: store.add_pot_move(con, pid, amt, when=when, note=note), f"pot-{pid}")
+
+
+@app.post("/goals/pots/{pid}/archive")
+def pot_archive(request: Request, pid: int):
+    return _goals_do(request, lambda con: store.archive_pot(con, pid), "pots")
+
+
+@app.post("/goals/habits")
+def habit_add(request: Request, name: str = Form(""), category: str = Form(""), match_text: str = Form(""),
+              target: str = Form(""), pot_id: str = Form("")):
+    return _goals_do(request, lambda con: store.add_habit(con, name, category, match_text, target, pot_id), "habits")
+
+
+@app.post("/goals/habits/{hid}/delete")
+def habit_delete(request: Request, hid: int):
+    return _goals_do(request, lambda con: store.delete_habit(con, hid), "habits")
+
+
+@app.post("/goals/habits/{hid}/book")
+def habit_book(request: Request, hid: int):
+    return _goals_do(request, lambda con: store.book_habit_saving(con, hid), "habits")
+
+
+@app.post("/goals/habits/{hid}/skip")
+def habit_skip(request: Request, hid: int):
+    return _goals_do(request, lambda con: store.dismiss_habit_saving(con, hid), "habits")
+
+
+@app.post("/goals/budgets")
+def budget_set(request: Request, category: str = Form(""), monthly: str = Form("")):
+    return _goals_do(request, lambda con: store.set_budget(con, category, monthly), "budgets")
+
+
+@app.post("/goals/budgets/suggested")
+def budget_suggested(request: Request):
+    return _goals_do(request, lambda con: store.use_suggested_budgets(con), "budgets")
 
 
 # --- categories -----------------------------------------------------------------------------------
