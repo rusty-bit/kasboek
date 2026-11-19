@@ -1,7 +1,7 @@
 # Kasboek with Docker Compose, for anyone. Only this file is needed (no clone, no build):
 #   docker compose up -d        then open http://<this machine>:8420 and sign in with kasboek / kasboek
 # Update: change the version below, then  docker compose pull && docker compose up -d
-# Build from source instead:  docker build -t ghcr.io/rusty-bit/kasboek:0.4.1 .   (in a clone of the repo)
+# Build from source instead:  docker build -t ghcr.io/rusty-bit/kasboek:0.4.2 .   (in a clone of the repo)
 #
 # Data (database, bank key, backups) goes into the Docker volume "kasboek-data" unless you set KASBOEK_DATA
 # to an ABSOLUTE folder, e.g. in a .env file next to this file:  KASBOEK_DATA=/volume1/Docker/kasboek/data
@@ -9,7 +9,7 @@
 # system disk. Optional settings: see stack.env.example.
 services:
   kasboek:
-    image: ghcr.io/rusty-bit/kasboek:0.4.1
+    image: ghcr.io/rusty-bit/kasboek:0.4.2
     container_name: kasboek
     restart: unless-stopped
     environment:

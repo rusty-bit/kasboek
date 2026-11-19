@@ -56,7 +56,7 @@ docker compose -f docker-compose.dev.yml up --build
 
 Uses `./data` next to the repo. **Local only. Never use this file on the NAS.**
 
-## Deploy on the NAS
+## Deploy on a NAS with Portainer
 
 Paths are absolute on purpose: a relative bind mount would land on the 1.8 GB rootfs.
 
@@ -69,7 +69,8 @@ Paths are absolute on purpose: a relative bind mount would land on the 1.8 GB ro
    `https://<that host>/banks/callback` as redirect URL in the Enable Banking control panel and on the Banks page,
    so bank logins come straight back.
 
-Updating: change the version in the stack (Portainer → the stack → Editor) and click Update the stack.
+Updating: change the version in the stack (Portainer → the stack → Editor), click Update the stack and switch on
+"Re-pull image and redeploy". The version must be one that is published (see the Releases / Packages on GitHub).
 Backups: one copy of the database per day in `/volume1/Docker/kasboek/data/backups`, the newest 14 are kept.
 
 The app listens on port 8420 and the container is limited to 256 MB.
@@ -77,8 +78,8 @@ The app listens on port 8420 and the container is limited to 256 MB.
 ## Releasing
 
 Bump the version in `docker-compose.yml` and `portainer-stack.yml`, commit, then tag:
-`git tag v0.4.2 && git push origin v0.4.2`. GitHub Actions runs the tests and publishes
-`ghcr.io/rusty-bit/kasboek:0.4.2` for amd64 and arm64.
+`git tag vX.Y.Z && git push origin vX.Y.Z`. GitHub Actions runs the tests and publishes
+`ghcr.io/rusty-bit/kasboek:X.Y.Z` for amd64 and arm64.
 
 ## License
 
