@@ -163,6 +163,20 @@ per_day = free ÷ days left (today counts)
 ### 6.7 Budgets
 - broke's `suggest` / `wellOff` / `tone` / `perDay` with € steps. A "Use suggested budgets" button for categories without a budget.
 
+### 6.8 Tags (requested by the owner, 2026-11-19; planned, not built)
+Categories stay: exactly one per booking, so totals, the donut, budgets and the forecast count every euro once.
+Tags add the cross-cutting view: any number per booking, answering "for whom / for what" (`kids`, `animals`,
+`garden`, `Italy 2025`, `bike`, `renovation`, `side-business`).
+- Data: `tags(id, name UNIQUE, color)`, `transaction_tags(tx_id, tag_id, source)` with source manual | rule | memory,
+  `rule_tags(rule_id, tag_id)`, `merchant_tags(norm, direction, tag_id)`. Manual tags are never removed by automation.
+- Input: tag chips on each transaction row (autocomplete from used tags); bulk "tag all N results" on any search or
+  filter (e.g. 1–21 Dec 2025 → `Italy 2025`); rules can set a category and/or add tags; merchant memory learns tags.
+- Analysis: filters and saved analyses accept tags; a category also works as a filter term ("Kids" = category Kids OR
+  tag `kids`), so nothing has to be converted. Dashboard category cards may include tags. Any chart over tags says
+  that one booking can appear under several tags, and never shows tag shares as a pie adding up to 100 %.
+- Later: split one booking into parts (an order of € 120 = € 80 garden + € 40 kids clothing), each with its own
+  category and tags; splits sum to the booking amount and the original stays for dedupe.
+
 ---
 
 ## 7. Pages
@@ -188,6 +202,7 @@ per_day = free ÷ days left (today counts)
 | M3 | Recurring + contracts + alerts | Known subscriptions all found; no grocery store detected as a bill |
 | M4 | Free-to-spend, 90-day and 12-month forecast, sinking funds | Hand-checked against one real month |
 | M5 | Pots, habits, budgets | Habit month-end suggestion books a pot move |
+| M5b | Tags (§6.8): per-booking tags, bulk tagging, rule/memory tags, tag filters and analyses | "What did the kids cost this year" works across categories without double-counting totals |
 | M6 | Enable Banking connector + scheduler + consent alert | All three banks sync for a week unattended |
 | M7 | HA sensor, ntfy, backups, deploy on the NAS via Portainer | Runs on the NAS from absolute `/volume2` paths and survives a reboot |
 | v2 | Seasonal hints, savings-account-linked pots, weekly check-in, FinTS fallback | — |
