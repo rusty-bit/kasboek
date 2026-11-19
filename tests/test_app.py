@@ -292,3 +292,36 @@ def test_overview_shows_upcoming_bills_and_alerts(client):
     _netflix(client)
     r = client.get("/")
     assert "Coming up" in r.text and "Netflix International" in r.text
+
+
+# --- M4: free to spend, forecast -------------------------------------------------------------------------
+def test_overview_shows_free_to_spend_and_balance_chart(client):
+    _netflix(client)
+    with db.db() as con:
+        con.execute("UPDATE accounts SET balance=800, balance_date=date('now')")
+    r = client.get("/")
+    assert "Free to spend" in r.text and "<svg" in r.text and "per day" in r.text
+    assert "Forecast" in r.text                                    # nav
+
+
+def test_overview_says_when_history_is_too_short(client):
+    acc = _new_account(client)
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n" + date_today_line(-5, "Winkel"), account=str(acc))
+    r = client.get("/")
+    assert "full month" in r.text
+
+
+def date_today_line(amount, name):
+    from datetime import date
+    return f"{date.today().strftime('%d-%m-%Y')};{amount},00;{name}\n".encode()
+
+
+def test_forecast_page_and_low_balance_setting(client):
+    _netflix(client)
+    r = client.get("/forecast")
+    assert r.status_code == 200 and "Next 12 months" in r.text and "Set aside" in r.text
+    r = client.post("/settings/low-balance", data={"low_balance": "250"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert 'name="low_balance" value="250' in client.get("/forecast").text
+    r = client.post("/settings/low-balance", data={"low_balance": "abc"})
+    assert r.status_code == 400

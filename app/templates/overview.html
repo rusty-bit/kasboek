@@ -9,6 +9,33 @@
 </div>
 {% else %}
 {% include "_alerts.html" %}
+{% set f = fc.free %}
+<div class="card">
+  <h2>Free to spend until {{ f.month_end }}</h2>
+  {% if not fc.balance.accounts %}
+  <p class="muted">No checking account is included yet. Set an account's kind to checking on the <a href="/accounts">Accounts</a> page.</p>
+  {% else %}
+  <p class="hero {{ 'neg' if f.free < 0 }}">{{ f.free|eur }}</p>
+  <p><strong>{{ f.per_day|eur }}</strong> per day for the {{ f.days_left }} days left this month.</p>
+  <p class="small muted">Checking balance {{ fc.balance.total|eur }}{% if fc.balance.as_of %} (as of {{ fc.balance.as_of }}){% endif %}
+    + regular income still due {{ f.income_due|eur }} − bills still due {{ f.bills_due|abs|eur }}.
+    <a href="/forecast">Details</a></p>
+  {% if fc.balance.missing %}<p class="small warn">No balance known for {{ fc.balance.missing|join(', ') }}: counted as € 0,00.</p>{% endif %}
+  {% if fc.variable.typical is none %}
+  <p class="small warn">Day-to-day spending: not enough history yet (needs one full month), so the forecast leaves it out.</p>
+  {% else %}
+  <p class="small">Day-to-day spending this month {{ fc.variable.this_month|eur }}, a typical month is {{ fc.variable.typical|eur }}.</p>
+  {% endif %}
+  {% endif %}
+</div>
+
+{% if fc.balance.accounts %}
+<div class="card">
+  <h2>Checking balance, next 90 days</h2>
+  {% include "_balance_chart.html" %}
+</div>
+{% endif %}
+
 <div class="card">
   <h2>Coming up</h2>
   {% if upcoming %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Forecast · Kasboek{% endblock %}
+{% block content %}
+<h1>Forecast</h1>
+{% if error %}<div class="error card">{{ error }}</div>{% endif %}
+{% set f = fc.free %}
+
+<div class="card table-wrap">
+  <h2>Rest of this month</h2>
+  <table>
+    <tr><td>Checking balance{% if fc.balance.as_of %} <span class="small muted">as of {{ fc.balance.as_of }}</span>{% endif %}</td>
+      <td class="num">{{ fc.balance.total|eur }}</td></tr>
+    {% for i in f["items"] %}
+    <tr><td><span class="muted small">{{ i.date }}</span> {{ i.merchant[:50] }}</td><td class="num {{ 'neg' if i.amount < 0 }}">{{ i.amount|eur }}</td></tr>
+    {% endfor %}
+    <tr><th>Free to spend</th><th class="num {{ 'neg' if f.free < 0 }}">{{ f.free|eur }}</th></tr>
+  </table>
+  <p class="small muted">{{ f.per_day|eur }} per day for {{ f.days_left }} days. Only checking accounts count; savings stay out.</p>
+</div>
+
+<div class="card table-wrap">
+  <h2>Next 12 months</h2>
+  {% if fc.variable.typical is none %}
+  <p class="small warn">Day-to-day spending is left out: there isn't a full month of history yet.</p>
+  {% else %}
+  <p class="small muted">Day-to-day spending is your typical month ({{ fc.variable.typical|eur }}, the middle of the last
+    {{ fc.variable.full_months }} full {{ 'month' if fc.variable.full_months == 1 else 'months' }}). Income and bills come from the
+    <a href="/recurring">recurring payments</a>; one-off income such as tax refunds isn't counted.</p>
+  {% endif %}
+  <table>
+    <tr><th>Month</th><th class="num">Income</th><th class="num">Fixed costs</th><th class="num">Savings &amp; moves</th>
+      <th class="num">Day-to-day</th><th class="num">Left over</th></tr>
+    {% for m in fc.outlook %}
+    <tr><td>{{ m.month }}</td><td class="num">{{ m.income|eur }}</td><td class="num neg">{{ m.fixed|eur }}</td>
+      <td class="num">{{ m.savings|eur }}</td><td class="num neg">{{ m.variable|eur }}</td>
+      <td class="num {{ 'neg' if m.net < 0 }}"><strong>{{ m.net|eur }}</strong></td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card table-wrap">
+  <h2>Set aside for irregular bills</h2>
+  {% if fc.sinking["items"] %}
+  <p>Set aside <strong>{{ fc.sinking.total|eur }}</strong> a month, so yearly and quarterly bills are covered when they come.</p>
+  <table>
+    <tr><th>Bill</th><th class="num">Amount</th><th>Next</th><th class="num">Per month</th></tr>
+    {% for i in fc.sinking["items"] %}
+    <tr><td>{{ i.merchant[:50] }} <span class="small muted">{{ freq_label(i.frequency) }}</span></td>
+      <td class="num neg">{{ i.amount|eur }}</td><td>{{ i.next_date }}</td><td class="num">{{ i.per_month|eur }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No yearly or quarterly bills found yet. They need two years (yearly) or three payments (quarterly) of history.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Low-balance warning</h2>
+  <form method="post" action="/settings/low-balance" class="filters">
+    <span>Warn me when the checking balance is expected to drop below</span>
+    <input name="low_balance" value="{{ '%g'|format(fc.low_threshold) }}" size="8" inputmode="decimal"> <span>euro</span>
+    <button type="submit">Save</button>
+  </form>
+</div>
+{% endblock %}

@@ -6,7 +6,10 @@ from datetime import date
 
 from app.categorize import (Rule, categorize_all, direction, memory_keys, merchant_text, norm_text,
                             normalize_merchant, rule_matches, suggest_rule_text)
+from app import db as dbm
+from app import forecast as fc
 from app import recurring as rc
+from app.fmt import eur
 from app.importers import crossmatch, dedupe_keys, group_key
 from app.transfers import infer_ibans
 
@@ -568,3 +571,70 @@ def dismiss_recurring(con, rid, dismissed=True):
 
 def recurring_alerts(con, today=None):
     return rc.alerts(recurring(con), today or date.today())
+
+
+# --- forecast (M4) --------------------------------------------------------------------------------
+def checking_balance(con):
+    """Sum of the balances of included checking accounts, and the oldest date one of them is from."""
+    rows = con.execute("SELECT name, balance, balance_date FROM accounts WHERE included = 1 AND kind = 'checking'"
+                       " ORDER BY name").fetchall()
+    have = [r for r in rows if r["balance"] is not None]
+    return {"total": round(sum(r["balance"] for r in have), 2),
+            "as_of": min((r["balance_date"] for r in have if r["balance_date"]), default=None),
+            "missing": [r["name"] for r in rows if r["balance"] is None], "accounts": [dict(r) for r in rows]}
+
+
+def _checking_rows(con):
+    return [dict(r) for r in con.execute(
+        "SELECT t.date, t.amount, t.counterparty, t.description, t.account_id, c.kind AS category_kind"
+        " FROM transactions t JOIN accounts a ON a.id = t.account_id LEFT JOIN categories c ON c.id = t.category_id"
+        " WHERE a.included = 1 AND a.kind = 'checking' AND t.ignored = 0")]
+
+
+def low_balance_threshold(con):
+    try:
+        return float(dbm.setting(con, "low_balance", "0") or 0)
+    except ValueError:
+        return 0.0
+
+
+def forecast(con, today=None):
+    """Everything the overview and forecast pages show, from the stored streams (run refresh_recurring first)."""
+    today = today or date.today()
+    streams = recurring(con)
+    bal = checking_balance(con)
+    live_keys = {s["key"] for s in streams if s["status"] != "stopped"}
+    var = fc.variable_spending(_checking_rows(con), live_keys, today)
+    daily = round((var["typical"] or 0.0) / 30.4, 2)
+    return {
+        "today": today, "streams": streams, "balance": bal, "variable": var, "daily_variable": daily,
+        "free": fc.free_to_spend(today, bal["total"], streams),
+        "projection": fc.project_balance(today, bal["total"], streams, daily),
+        "outlook": fc.outlook(today, streams, var["typical"] or 0.0),
+        "sinking": fc.sinking_funds(streams),
+        "low_threshold": low_balance_threshold(con),
+    }
+
+
+CONSENT_WARN_DAYS = 14
+
+
+def all_alerts(con, today=None, fc_ctx=None):
+    """Recurring alerts + low projected balance + bank permission running out."""
+    today = today or date.today()
+    f = fc_ctx or forecast(con, today)
+    out = rc.alerts(f["streams"], today)
+    p, low = f["projection"], f["low_threshold"]
+    if f["balance"]["accounts"] and p["lowest"] < low:
+        out.insert(0, {"kind": "low_balance", "level": "bad" if p["lowest"] < 0 else "warn", "key": "balance",
+                       "text": f"Your checking balance may drop to {eur(p['lowest'])} around "
+                               f"{p['lowest_date'].isoformat()} (your limit is {eur(low)})."})
+    for s in eb_sessions(con):
+        if s.get("valid_until"):
+            days = (date.fromisoformat(s["valid_until"][:10]) - today).days
+            if days <= CONSENT_WARN_DAYS:
+                out.insert(0, {"kind": "consent", "level": "bad" if days <= 3 else "warn", "key": s["session_id"],
+                               "text": f"The bank permission for {s.get('aspsp') or 'a bank'} "
+                                       f"{'has run out' if days < 0 else f'runs out in {days} days'}. "
+                                       f"Reconnect it on the Banks page."})
+    return out

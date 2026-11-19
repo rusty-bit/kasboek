@@ -72,3 +72,28 @@ def test_alerts_for_price_hike(con, acc):
     imp(con, [f"03-{m:02d}-2026;-10,99;Spotify AB" for m in (8, 9, 10)] + ["03-11-2026;-12,99;Spotify AB"], acc)
     store.refresh_recurring(con, TODAY)
     assert [a["kind"] for a in store.recurring_alerts(con, TODAY)] == ["price_hike"]
+
+
+# --- M4: forecast glue -----------------------------------------------------------------------------
+def test_forecast_uses_checking_balance_and_streams(con, acc):
+    salary = [f"25-{m:02d}-2026;3000,00;Werkgever BV" for m in (7, 8, 9, 10)]
+    rent = [f"28-{m:02d}-2026;-1200,00;Woonstichting" for m in (7, 8, 9, 10)]
+    shops = [f"{d:02d}-{m:02d}-2026;-{a},00;Winkel {chr(96 + m)}{chr(96 + d)}" for m in (8, 9, 10) for d, a in [(5, 300), (12, 400)]]
+    imp(con, salary + rent + shops, acc)
+    con.execute("UPDATE accounts SET balance=1000, balance_date='2026-11-18'")
+    savings = store.create_account(con, "Spaar", "rabobank", kind="savings")
+    con.execute("UPDATE accounts SET balance=9999 WHERE id=?", (savings,))
+    store.refresh_recurring(con, TODAY)
+    f = store.forecast(con, TODAY)
+    assert f["balance"]["total"] == 1000 and f["balance"]["as_of"] == "2026-11-18"
+    assert f["free"]["income_due"] == 3000 and f["free"]["bills_due"] == -1200 and f["free"]["free"] == 2800
+    assert f["variable"]["typical"] == 700 and f["daily_variable"] == round(700 / 30.4, 2)
+    assert len(f["projection"]["series"]) == 90 and len(f["outlook"]) == 12
+
+
+def test_low_balance_alert(con, acc):
+    imp(con, [f"28-{m:02d}-2026;-1200,00;Woonstichting" for m in (7, 8, 9, 10)], acc)
+    con.execute("UPDATE accounts SET balance=500, balance_date='2026-11-18'")
+    store.refresh_recurring(con, TODAY)
+    alerts = store.all_alerts(con, TODAY)
+    assert any(a["kind"] == "low_balance" and "2027-01-28" in a["text"] and a["level"] == "bad" for a in alerts)

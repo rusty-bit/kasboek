@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app import charts
 from app import recurring as rc
 from app import db, enablebanking, llm, store
 from app.fmt import eur
@@ -104,9 +105,11 @@ def overview(request: Request):
         ctx = {"page": "overview", "tx_count": tx_count}
         if tx_count:
             store.refresh_recurring(con)
-            streams = store.recurring(con)
-            ctx["alerts"] = rc.alerts(streams, date.today())
-            ctx["upcoming"] = sorted((s for s in streams if s["status"] != "stopped" and s["kind"] != "transfer"),
+            f = store.forecast(con)
+            ctx["fc"] = f
+            ctx["g"] = charts.line(f["projection"]["series"], threshold=f["low_threshold"])
+            ctx["alerts"] = store.all_alerts(con, f["today"], f)
+            ctx["upcoming"] = sorted((s for s in f["streams"] if s["status"] != "stopped" and s["kind"] != "transfer"),
                                      key=lambda s: s["next_date"])[:10]
         return render(request, "overview.html", ctx, con=con)
 
@@ -422,6 +425,29 @@ def recurring_dismiss(request: Request, rid: int, dismissed: str = Form("1")):
     if _is_htmx(request):
         return HTMLResponse("")
     return RedirectResponse("/recurring", status_code=303)
+
+
+# --- forecast (M4) -------------------------------------------------------------------------------
+def _forecast_page(request, con, status=200, **ctx):
+    store.refresh_recurring(con)
+    return render(request, "forecast.html", {"page": "forecast", "fc": store.forecast(con), **ctx}, status, con)
+
+
+@app.get("/forecast")
+def forecast_page(request: Request):
+    with db.db() as con:
+        return _forecast_page(request, con)
+
+
+@app.post("/settings/low-balance")
+def settings_low_balance(request: Request, low_balance: str = Form("0")):
+    with db.db() as con:
+        try:
+            value = float(low_balance.strip().replace(".", "").replace(",", ".") or 0)
+        except ValueError:
+            return _forecast_page(request, con, 400, error="Type an amount in euro, for example 250.")
+        db.set_setting(con, "low_balance", value)
+    return RedirectResponse("/forecast", status_code=303)
 
 
 # --- rules ----------------------------------------------------------------------------------------
