@@ -1,71 +1,66 @@
 <!doctype html>
-<html lang="en">
+{% from "_icons.html" import icon %}
+<html lang="en" data-theme="{{ theme or 'dark' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="{{ '#eef0f3' if theme == 'light' else '#111317' }}">
   <title>{% block title %}Kasboek{% endblock %}</title>
+  <link rel="stylesheet" href="/static/kasboek.css?v=4">
   <script src="/static/htmx.min.js"></script>
-  <style>
-    :root { --bg:#f6f5f1; --card:#fff; --ink:#1d2b2f; --muted:#6b7a7e; --line:#e2e0d8; --accent:#2f6b5a; --warn:#a45a00; --bad:#b3261e; }
-    * { box-sizing: border-box; }
-    body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
-    header { background:var(--ink); color:#fff; padding:0 16px; }
-    header nav { max-width:1000px; margin:0 auto; display:flex; gap:20px; align-items:center; height:52px; }
-    header a { color:#cfe0db; text-decoration:none; }
-    header a.on, header a:hover { color:#fff; }
-    header .brand { font-weight:700; color:#fff; margin-right:12px; }
-    main { max-width:1000px; margin:24px auto; padding:0 16px; }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:18px; }
-    h1 { font-size:22px; margin:0 0 16px; } h2 { font-size:17px; margin:0 0 12px; }
-    .muted { color:var(--muted); }
-    .warn { color:var(--warn); } .bad { color:var(--bad); }
-    .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    .neg { color:var(--bad); }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
-    th { font-size:13px; color:var(--muted); font-weight:600; }
-    input, select, button { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; }
-    button, .btn { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; text-decoration:none; padding:6px 12px; border-radius:6px; display:inline-block; }
-    .notice { border-left:4px solid var(--warn); background:#fff8ec; padding:10px 14px; border-radius:6px; }
-    .error { border-left:4px solid var(--bad); background:#fdeeed; padding:10px 14px; border-radius:6px; }
-    .ok { border-left:4px solid var(--accent); background:#eef6f3; padding:10px 14px; border-radius:6px; }
-    .table-wrap { overflow-x:auto; }
-    .small { font-size:13px; } .nowrap { white-space:nowrap; }
-    .filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-    .catform { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-    .catform select { max-width:220px; }
-    tr.unsure td { background:#fffaf0; }
-    .src { border-radius:4px; padding:0 4px; background:#eef0ee; }
-    .src-default, .src-llm { background:#fde9c8; } .src-manual { background:#dcefe7; }
-    button.link { background:none; border:none; color:var(--accent); padding:0; text-decoration:underline; cursor:pointer; font-size:inherit; }
-    .ok-text { color:var(--accent); }
-    header nav { overflow-x:auto; }
-    .hero { font-size:34px; font-weight:700; margin:4px 0; font-variant-numeric:tabular-nums; }
-    .balance-chart .series { fill:none; stroke:var(--accent); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
-    .balance-chart .grid { stroke:var(--line); stroke-width:1; }
-    .balance-chart .limit { stroke:var(--bad); stroke-width:1; stroke-dasharray:4 4; }
-    .balance-chart .low { fill:var(--accent); stroke:var(--card); stroke-width:2; }
-    .balance-chart .cross { stroke:var(--muted); stroke-width:1; }
-    .balance-chart .lbl { font-size:12px; fill:var(--ink); }
-    .balance-chart .axis { font-size:11px; fill:var(--muted); }
-    header .badge { background:var(--warn); color:#fff; border-radius:9px; padding:0 6px; font-size:12px; }
-  </style>
 </head>
 <body>
-<header><nav>
-  <span class="brand">Kasboek</span>
-  <a href="/" class="{{ 'on' if page == 'overview' }}">Overview</a>
-  <a href="/transactions" class="{{ 'on' if page == 'transactions' }}">Transactions</a>
-  <a href="/queue" class="{{ 'on' if page == 'queue' }}">Is this right?{% include "_queue_count.html" %}</a>
-  <a href="/recurring" class="{{ 'on' if page == 'recurring' }}">Recurring</a>
-  <a href="/forecast" class="{{ 'on' if page == 'forecast' }}">Forecast</a>
-  <a href="/rules" class="{{ 'on' if page == 'rules' }}">Rules</a>
-  <a href="/banks" class="{{ 'on' if page == 'banks' }}">Banks</a>
-  <a href="/import" class="{{ 'on' if page == 'import' }}">Import</a>
-  <a href="/accounts" class="{{ 'on' if page == 'accounts' }}">Accounts</a>
+<!--
+THESIS: The household's money as a Home Assistant-style card dashboard: glanceable numbers first, one
+  month/year switch that recolours nothing (each spending group keeps its colour). Refuses the bank-app list.
+OWN-WORLD: near-black ground #111317, graphite cards #1c1f25 (16px radius, soft shadow), one sky accent
+  #5aa9f8 for actions; eight validated series hues for data only; system sans, tabular numerals; one SVG icon set.
+STORY: open on the phone, see what is free to spend and where money went this month, switch month/year,
+  tap through to the transactions behind a number.
+FIRST VIEWPORT: alerts, then Free to spend (huge number + per day) beside the 90-day balance line;
+  the Spending header with Month|Year and previous/next sits right under it.
+FORM: brief-pinned (Home Assistant dark dashboard + Finanzguru Analysen), not rolled; code-led.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
+<header class="top"><nav aria-label="Sections">
+  <a class="brand" href="/">{{ icon('logo', 22) }}<span>Kasboek</span></a>
+  <a href="/" class="tab {{ 'on' if page == 'overview' }}">Overview</a>
+  <a href="/transactions" class="tab {{ 'on' if page == 'transactions' }}">Transactions</a>
+  <a href="/queue" class="tab {{ 'on' if page == 'queue' }}">Is this right?{% include "_queue_count.html" %}</a>
+  <a href="/recurring" class="tab {{ 'on' if page == 'recurring' }}">Recurring</a>
+  <a href="/forecast" class="tab {{ 'on' if page == 'forecast' }}">Forecast</a>
+  <a href="/rules" class="tab {{ 'on' if page == 'rules' }}">Rules</a>
+  <a href="/banks" class="tab {{ 'on' if page == 'banks' }}">Banks</a>
+  <a href="/import" class="tab {{ 'on' if page == 'import' }}">Import</a>
+  <a href="/accounts" class="tab {{ 'on' if page == 'accounts' }}">Accounts</a>
+  <span class="spacer"></span>
+  <button class="icon-btn" type="button" id="theme-btn" aria-label="Switch to {{ 'dark' if theme == 'light' else 'light' }} theme"
+          title="Switch to {{ 'dark' if theme == 'light' else 'light' }} theme">
+    <span class="when-dark">{{ icon('sun', 18) }}</span><span class="when-light">{{ icon('moon', 18) }}</span>
+  </button>
 </nav></header>
 <main>
 {% block content %}{% endblock %}
 </main>
+<script>
+(function () {
+  const root = document.documentElement, btn = document.getElementById("theme-btn");
+  const paint = () => {
+    const light = root.dataset.theme === "light";
+    btn.querySelector(".when-dark").hidden = light;
+    btn.querySelector(".when-light").hidden = !light;
+    const next = light ? "dark" : "light";
+    btn.setAttribute("aria-label", "Switch to " + next + " theme"); btn.title = "Switch to " + next + " theme";
+    document.querySelector('meta[name="theme-color"]').content = light ? "#eef0f3" : "#111317";
+  };
+  btn.addEventListener("click", () => {
+    root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
+    document.cookie = "theme=" + root.dataset.theme + "; path=/; max-age=31536000; SameSite=Lax";
+    paint();
+  });
+  paint();
+})();
+</script>
 </body>
 </html>

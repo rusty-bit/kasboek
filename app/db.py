@@ -133,6 +133,14 @@ CREATE TABLE IF NOT EXISTS budgets (
   monthly REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS analyses (            -- saved dashboard analyses ("Italy", "Bike")
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  categories TEXT DEFAULT '',                  -- comma-separated category keys; empty = all spending
+  match_text TEXT DEFAULT '',                  -- name or description contains this
+  date_from TEXT, date_to TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS eb_sessions (
   session_id TEXT PRIMARY KEY,
   aspsp TEXT, country TEXT, valid_until TEXT,

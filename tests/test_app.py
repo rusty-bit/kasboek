@@ -368,3 +368,42 @@ def test_search_from_the_form_looks_in_all_months_by_default(client):
     default = re.search(r'<select name="month"[^>]*>.*?<option value="([^"]*)"[^>]*selected', page, re.S).group(1)
     r = client.get("/transactions", params={"month": default, "q": "2895,54", "account": "", "owner": "", "category": ""})
     assert "Lymow shop" in r.text
+
+
+# --- dashboard ---------------------------------------------------------------------------------------------
+def test_dashboard_shows_spending_cards_and_switches_period(client):
+    _search_rows(client)
+    r = client.get("/", params={"period": "2026-10"})
+    assert r.status_code == 200 and "Where the money went" in r.text and "October 2026" in r.text
+    assert "Car" in r.text and "Groceries" in r.text and "Animals &amp; pets" in r.text and "Kids &amp; daycare" in r.text
+    assert 'class="donut"' in r.text and "Spending per month" in r.text and "Across your accounts" in r.text
+    r = client.get("/", params={"period": "2026"})
+    assert ">2026<" in r.text and 'class="on" hx-get="/?period=2026"' in r.text
+    r = client.get("/", params={"period": "2026-03"})
+    assert "March 2026" in r.text and "€ 2.895,54" in r.text
+
+
+def test_dashboard_saves_and_deletes_an_analysis(client):
+    _search_rows(client)
+    r = client.post("/analyses", data={"name": "Netflix", "match_text": "netflix", "period": "2026-10"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    page = client.get("/", params={"period": "2026-10"}).text
+    assert "Netflix" in page and "€ 13,99" in page
+    with db.db() as con:
+        aid = con.execute("SELECT id FROM analyses").fetchone()["id"]
+    client.post(f"/analyses/{aid}/delete", data={"period": "2026-10"})
+    with db.db() as con:
+        assert con.execute("SELECT COUNT(*) FROM analyses").fetchone()[0] == 0
+
+
+def test_analysis_without_filters_explains(client):
+    _search_rows(client)
+    r = client.post("/analyses", data={"name": "All", "period": ""})
+    assert "Pick at least one category" in r.text
+
+
+def test_theme_cookie_switches_to_light(client):
+    assert 'data-theme="dark"' in client.get("/").text
+    client.cookies.set("theme", "light")
+    assert 'data-theme="light"' in client.get("/").text

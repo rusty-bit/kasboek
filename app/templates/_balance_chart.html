@@ -1,7 +1,7 @@
 {# 90-day checking balance. g = charts.line(...). Single series: the heading names it, no legend. #}
 <figure class="chart" style="margin:0">
   <svg viewBox="0 0 {{ g.width }} {{ g.height + 22 }}" width="100%" role="img"
-       aria-label="Expected checking balance for the next 90 days. Lowest {{ g.low.value|eur }} on {{ g.low.date }}."
+       aria-label="{{ chart_label or 'Expected checking balance for the next 90 days' }}. Lowest {{ g.low.value|eur }} on {{ g.low.date }}."
        class="balance-chart" data-coords='{{ g.coords|tojson }}'>
     <line x1="{{ g.pad }}" x2="{{ g.width - g.pad }}" y1="{{ g.y_hi }}" y2="{{ g.y_hi }}" class="grid"/>
     <line x1="{{ g.pad }}" x2="{{ g.width - g.pad }}" y1="{{ g.y_lo }}" y2="{{ g.y_lo }}" class="grid"/>
@@ -9,15 +9,17 @@
     <line x1="{{ g.pad }}" x2="{{ g.width - g.pad }}" y1="{{ g.threshold_y }}" y2="{{ g.threshold_y }}" class="limit"/>
     {% endif %}
     <polyline points="{{ g.points }}" class="series"/>
+    {% if not chart_label %}
     <circle cx="{{ g.low.x }}" cy="{{ g.low.y }}" r="4.5" class="low"/>
-    <text x="{{ [[g.low.x, 60]|max, g.width - 60]|min }}" y="{{ g.low.y + 16 if g.low.y < g.height - 30 else g.low.y - 9 }}"
+    <text x="{{ [[g.low.x, 60]|max, g.width - 60]|min }}" y="{{ g.low.y - 10 if g.low.y > 30 else g.low.y + 18 }}"
           text-anchor="middle" class="lbl">lowest {{ g.low.value|eur }}</text>
+    {% endif %}
     <text x="{{ g.pad }}" y="{{ g.height + 16 }}" class="axis">{{ g.coords[0].date }}</text>
     <text x="{{ g.width - g.pad }}" y="{{ g.height + 16 }}" text-anchor="end" class="axis">{{ g.coords[-1].date }}</text>
     <line class="cross" y1="{{ g.pad }}" y2="{{ g.height - g.pad }}" x1="-10" x2="-10"/>
     <rect x="0" y="0" width="{{ g.width }}" height="{{ g.height }}" fill="transparent" class="hit"/>
   </svg>
-  <figcaption class="small muted chart-tip" aria-live="polite">Hover the line to see a day.
+  <figcaption class="small muted chart-tip" aria-live="polite">Hover the line to see {{ 'a month' if chart_label else 'a day' }}.
     {% if g.threshold_y is not none %}Dashed line: your low-balance limit.{% endif %}</figcaption>
 </figure>
 <details class="small"><summary class="muted">Show as a table</summary>

@@ -666,3 +666,73 @@ def all_alerts(con, today=None, fc_ctx=None):
                                        f"{'has run out' if days < 0 else f'runs out in {days} days'}. "
                                        f"Reconnect it on the Banks page."})
     return out
+
+
+# --- dashboard ------------------------------------------------------------------------------------
+def analytics_rows(con):
+    """Transactions of included accounts, for the dashboard numbers."""
+    return [dict(r) for r in con.execute(
+        "SELECT t.date, t.amount, t.counterparty, t.description, t.account_id, c.key AS category_key,"
+        " c.kind AS category_kind FROM transactions t JOIN accounts a ON a.id = t.account_id"
+        " LEFT JOIN categories c ON c.id = t.category_id WHERE a.included = 1 AND t.ignored = 0")]
+
+
+def add_analysis(con, name, categories=(), match_text="", date_from="", date_to=""):
+    name = (name or "").strip()
+    cats = [c for c in categories if c]
+    if not name:
+        raise ValueError("Give the analysis a name, for example Italy or Bike.")
+    if not (cats or (match_text or "").strip() or date_from or date_to):
+        raise ValueError("Pick at least one category, a text to look for, or dates.")
+    for d in (date_from, date_to):
+        if d:
+            date.fromisoformat(d)
+    known = {r["key"] for r in con.execute("SELECT key FROM categories")}
+    cur = con.execute("INSERT INTO analyses(name, categories, match_text, date_from, date_to) VALUES (?,?,?,?,?)",
+                      (name, ",".join(c for c in cats if c in known), (match_text or "").strip(),
+                       date_from or None, date_to or None))
+    return cur.lastrowid
+
+
+def delete_analysis(con, aid):
+    con.execute("DELETE FROM analyses WHERE id=?", (aid,))
+
+
+def dashboard(con, period_key="", today=None):
+    """Everything the dashboard shows for one month or year."""
+    from app import analytics as an
+    today = today or date.today()
+    p = an.period(period_key, today)
+    rows = analytics_rows(con)
+    streams = recurring(con)
+    live = {s["key"] for s in streams if s["status"] != "stopped"}
+    labels = {r["key"]: r["label"] for r in con.execute("SELECT key, label FROM categories")}
+    end = min(p["end"], today)
+    spend = an.spending(rows, p["start"], end)
+    for c in spend["categories"]:
+        c["label"] = labels.get(c["key"], c["key"])
+    rev = an.review(rows, p["start"], end)
+    for c in rev["top"]:
+        c["label"] = labels.get(c["key"], c["key"])
+    cards = []
+    for key, label, cats in an.CATEGORY_CARDS:
+        avg = an.category_average(rows, set(cats), today)
+        now = an.spending([r for r in rows if r.get("category_key") in cats], p["start"], end)["total"]
+        cards.append({"key": key, "label": label, "group": an.group_of(cats[0]), "now": now, **avg})
+    accs = [dict(r) for r in con.execute("SELECT id, name, kind, balance, balance_date FROM accounts"
+                                         " WHERE included = 1 ORDER BY id")]
+    analyses = []
+    for a in con.execute("SELECT * FROM analyses ORDER BY id"):
+        a = dict(a)
+        a["result"] = an.run_analysis(a, rows)
+        a["category_labels"] = [labels.get(c, c) for c in (a["categories"] or "").split(",") if c]
+        analyses.append(a)
+    with_balance = [a for a in accs if a["balance"] is not None]
+    return {
+        "today": today, "period": p, "spending": spend, "review": rev, "cards": cards,
+        "monthly": an.monthly(rows, live, today, months=12), "analyses": analyses,
+        "accounts": {"items": with_balance, "missing": [a["name"] for a in accs if a["balance"] is None],
+                     "total": round(sum(a["balance"] for a in with_balance), 2)},
+        "history": an.balance_history(accs, rows, today, months=24),
+        "first_date": min((r["date"][:10] for r in rows), default=None),
+    }

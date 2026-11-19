@@ -97,3 +97,27 @@ def test_low_balance_alert(con, acc):
     store.refresh_recurring(con, TODAY)
     alerts = store.all_alerts(con, TODAY)
     assert any(a["kind"] == "low_balance" and "2027-01-28" in a["text"] and a["level"] == "bad" for a in alerts)
+
+
+# --- dashboard glue --------------------------------------------------------------------------------
+def test_dashboard_bundles_spending_cards_balances_and_analyses(con, acc):
+    imp(con, NETFLIX + GROCERIES + ["10-10-2026;-871,04;Sandseed Bed & Breakfast Rome"], acc)
+    con.execute("UPDATE accounts SET balance=1000, balance_date='2026-11-19'")
+    store.refresh_recurring(con, TODAY)
+    store.add_analysis(con, "Italy", categories=[], match_text="rome", date_from="", date_to="")
+    d = store.dashboard(con, "2026-10", TODAY)
+    assert d["period"]["label"] == "October 2026" and d["spending"]["total"] > 0
+    assert {c["key"] for c in d["cards"]} == {"housing", "car", "groceries", "kids", "animals"}
+    assert d["analyses"][0]["name"] == "Italy" and d["analyses"][0]["result"]["total"] == 871.04
+    assert d["accounts"]["total"] == 1000 and d["history"]["series"][-1][1] == 1000
+    assert len(d["monthly"]) == 12
+    store.delete_analysis(con, d["analyses"][0]["id"])
+    assert store.dashboard(con, "2026-10", TODAY)["analyses"] == []
+
+
+def test_add_analysis_needs_a_name_and_some_filter(con, acc):
+    import pytest as _p
+    with _p.raises(ValueError):
+        store.add_analysis(con, "", categories=["holidays"])
+    with _p.raises(ValueError):
+        store.add_analysis(con, "Everything", categories=[], match_text="", date_from="", date_to="")

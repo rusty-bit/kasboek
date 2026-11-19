@@ -7,13 +7,14 @@ import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app import charts, search
+from app import analytics, charts, search
 from app import recurring as rc
 from app import db, enablebanking, llm, store
 from app.fmt import eur
@@ -31,6 +32,8 @@ templates.env.globals["kinds"] = store.KINDS
 SOURCE_LABELS = {"manual": "set by you", "transfer": "own transfer", "rule": "rule", "memory": "learned",
                  "iban": "learned (same IBAN)", "chain": "learned (same chain)", "keyword": "keyword",
                  "mcc": "shop type from bank", "llm": "AI guess", "default": "unsure"}
+templates.env.globals["month_name"] = lambda m: f"{analytics.MONTH_NAMES[int(m[5:7]) - 1]} {m[:4]}"
+templates.env.globals["month_letter"] = lambda m: analytics.MONTH_NAMES[int(m[5:7]) - 1][:1]
 templates.env.globals["freq_label"] = lambda f: rc.FREQ_LABELS.get(f, f)
 templates.env.globals["source_label"] = lambda s: SOURCE_LABELS.get(s or "", s or "")
 FIELD_LABELS = {"any": "name or description", "counterparty": "name", "description": "description", "iban": "IBAN"}
@@ -88,6 +91,7 @@ def render(request, name, ctx=None, status=200, con=None):
             return render(request, name, ctx, status, c)
     ctx.setdefault("queue_count", store.queue_count(con))
     ctx.setdefault("categories", store.categories(con))
+    ctx.setdefault("theme", "light" if request.cookies.get("theme") == "light" else "dark")
     return templates.TemplateResponse(request, name, ctx, status_code=status)
 
 
@@ -98,8 +102,28 @@ def health():
     return {"ok": True}
 
 
+GROUP_SLOT = {key: i + 1 for i, (key, _, _) in enumerate(analytics.GROUPS)}   # colour follows the group
+
+
+def _dashboard_charts(d):
+    """SVG geometry for the dashboard. Slices are drawn in the fixed group / account order."""
+    sp = d["spending"]
+    donut = charts.donut([(g["key"], g["amount"]) for g in sp["groups"]], size=168, thickness=22)
+    accs = d["accounts"]["items"]
+    acc_slot = {a["id"]: min(i + 1, 8) for i, a in enumerate(accs)}
+    acc_donut = charts.donut([(a["id"], a["balance"]) for a in accs if a["balance"] > 0], size=168, thickness=22)
+    monthly = charts.stacked_bars([(m["month"], m["fixed"], m["variable"]) for m in d["monthly"]],
+                                  width=600, height=150, pad=2)
+    for c in d["cards"]:
+        c["bars"] = charts.bars([v for _, v in c["series"]], width=240, height=40)
+    hist = d["history"]["series"]
+    worth = charts.line([(date.fromisoformat(p), v) for p, v in hist], width=600, height=150) if len(hist) >= 2 else None
+    return {"donut": donut, "acc_donut": acc_donut, "acc_slot": acc_slot, "monthly_bars": monthly, "worth": worth,
+            "group_slot": GROUP_SLOT, "group_label": analytics.GROUP_LABEL}
+
+
 @app.get("/")
-def overview(request: Request):
+def overview(request: Request, period: str = "", analysis_error: str = ""):
     with db.db() as con:
         tx_count = con.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
         ctx = {"page": "overview", "tx_count": tx_count}
@@ -110,8 +134,35 @@ def overview(request: Request):
             ctx["g"] = charts.line(f["projection"]["series"], threshold=f["low_threshold"])
             ctx["alerts"] = store.all_alerts(con, f["today"], f)
             ctx["upcoming"] = sorted((s for s in f["streams"] if s["status"] != "stopped" and s["kind"] != "transfer"),
-                                     key=lambda s: s["next_date"])[:10]
+                                     key=lambda s: s["next_date"])[:8]
+            d = store.dashboard(con, period, f["today"])
+            ctx["d"] = d
+            ctx.update(_dashboard_charts(d))
+            ctx["expense_categories"] = [c for c in store.categories(con) if c["kind"] == "expense"]
+            ctx["analysis_error"] = analysis_error[:200]
         return render(request, "overview.html", ctx, con=con)
+
+
+@app.post("/analyses")
+async def analysis_add(request: Request):
+    form = await request.form()
+    period = form.get("period", "")
+    with db.db() as con:
+        try:
+            store.add_analysis(con, form.get("name", ""), categories=form.getlist("categories"),
+                               match_text=form.get("match_text", ""), date_from=form.get("date_from", ""),
+                               date_to=form.get("date_to", ""))
+        except ValueError as e:
+            msg = str(e) if "Give" in str(e) or "Pick" in str(e) else "Those dates aren't valid. Use the date pickers."
+            return RedirectResponse(f"/?period={period}&analysis_error={quote(msg)}#analyses", status_code=303)
+    return RedirectResponse(f"/?period={period}#analyses", status_code=303)
+
+
+@app.post("/analyses/{aid}/delete")
+def analysis_delete(aid: int, period: str = Form("")):
+    with db.db() as con:
+        store.delete_analysis(con, aid)
+    return RedirectResponse(f"/?period={period}#analyses" if period else "/#analyses", status_code=303)
 
 
 # --- import ---------------------------------------------------------------------------------------

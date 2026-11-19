@@ -1,54 +1,280 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block content %}
-<h1>Overview</h1>
 {% if tx_count == 0 %}
 <div class="card">
   <h2>Import your first statement</h2>
-  <p class="muted">There is nothing here yet. Download a CSV or CAMT.053 export from Rabobank, Knab or comdirect and import it.</p>
+  <p class="muted">There is nothing here yet. Download a CSV or CAMT.053 export from Rabobank, Knab or comdirect and import it,
+    or connect a bank on the Banks page.</p>
   <a class="btn" href="/import">Go to import</a>
 </div>
 {% else %}
-{% include "_alerts.html" %}
 {% set f = fc.free %}
-<div class="card">
-  <h2>Free to spend until {{ f.month_end }}</h2>
-  {% if not fc.balance.accounts %}
-  <p class="muted">No checking account is included yet. Set an account's kind to checking on the <a href="/accounts">Accounts</a> page.</p>
-  {% else %}
-  <p class="hero {{ 'neg' if f.free < 0 }}">{{ f.free|eur }}</p>
-  <p><strong>{{ f.per_day|eur }}</strong> per day for the {{ f.days_left }} days left this month.</p>
-  <p class="small muted">Checking balance {{ fc.balance.total|eur }}{% if fc.balance.as_of %} (as of {{ fc.balance.as_of }}){% endif %}
-    + regular income still due {{ f.income_due|eur }} − bills still due {{ f.bills_due|abs|eur }}.
-    <a href="/forecast">Details</a></p>
-  {% if fc.balance.missing %}<p class="small warn">No balance known for {{ fc.balance.missing|join(', ') }}: counted as € 0,00.</p>{% endif %}
-  {% if fc.variable.typical is none %}
-  <p class="small warn">Day-to-day spending: not enough history yet (needs one full month), so the forecast leaves it out.</p>
-  {% else %}
-  <p class="small">Day-to-day spending this month {{ fc.variable.this_month|eur }}, a typical month is {{ fc.variable.typical|eur }}.</p>
-  {% endif %}
-  {% endif %}
-</div>
+{% set p = d.period %}
+<div class="dash">
 
-{% if fc.balance.accounts %}
-<div class="card">
-  <h2>Checking balance, next 90 days</h2>
-  {% include "_balance_chart.html" %}
-</div>
-{% endif %}
+  {% if alerts %}
+  <section class="card" aria-label="Heads up">
+    <div class="tile-title">Heads up</div>
+    {% for a in alerts %}<div class="{{ 'error' if a.level == 'bad' else 'notice' if a.level == 'warn' else 'ok' }}" style="margin-top:6px">{{ a.text }}</div>{% endfor %}
+  </section>
+  {% endif %}
 
-<div class="card">
-  <h2>Coming up</h2>
-  {% if upcoming %}
-  <table>
-    {% for s in upcoming %}
-    <tr><td class="nowrap">{{ s.next_date }}</td><td>{{ s.merchant[:50] }} <span class="small muted">{{ freq_label(s.frequency) }}</span></td>
-      <td class="num {{ 'neg' if s.average < 0 }}">{{ s.average|eur }}</td></tr>
+  <section class="card w4" aria-labelledby="free-h">
+    <div class="tile-title"><span class="ic">{{ icon('wallet') }}</span><span id="free-h">Free to spend</span></div>
+    {% if not fc.balance.accounts %}
+    <p class="muted">No checking account is included yet. Set an account's kind to checking on the <a href="/accounts">Accounts</a> page.</p>
+    {% else %}
+    <div class="hero {{ 'neg' if f.free < 0 }}">{{ f.free|eur }}</div>
+    <div class="sub">until {{ f.month_end }} · <strong style="color:var(--ink)">{{ f.per_day|eur }}</strong> a day for {{ f.days_left }} days</div>
+    <p class="small muted" style="margin:12px 0 0">Checking balance {{ fc.balance.total|eur }}{% if fc.balance.as_of %} (as of {{ fc.balance.as_of }}){% endif %}
+      + income still due {{ f.income_due|eur }} − bills still due {{ f.bills_due|abs|eur }}. <a href="/forecast">Details</a></p>
+    {% if fc.balance.missing %}<p class="small warn" style="margin:6px 0 0">No balance known for {{ fc.balance.missing|join(', ') }}: counted as € 0,00.</p>{% endif %}
+    {% if fc.variable.typical is none %}
+    <p class="small warn" style="margin:6px 0 0">Day-to-day spending: not enough history yet (needs one full month), so the forecast leaves it out.</p>
+    {% else %}
+    <p class="small muted" style="margin:6px 0 0">Day-to-day spending this month {{ fc.variable.this_month|eur }}; a typical month is {{ fc.variable.typical|eur }}.</p>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  {% if fc.balance.accounts %}
+  <section class="card w8" aria-labelledby="line-h">
+    <div class="tile-title"><span class="ic">{{ icon('trend') }}</span><span id="line-h">Checking balance, next 90 days</span></div>
+    {% include "_balance_chart.html" %}
+  </section>
+  {% endif %}
+
+  <div id="spending" class="dash" style="grid-column: 1 / -1">
+    <div class="dash-head" style="grid-column: 1 / -1">
+      <h2>Spending</h2>
+      <div class="period" hx-boost="false">
+        <div class="seg" role="group" aria-label="Show a month or a year">
+          {% set month_key = p.key if p.kind == 'month' else p.switch %}
+          {% set year_key = p.key if p.kind == 'year' else p.switch %}
+          <a href="/?period={{ month_key }}" class="{{ 'on' if p.kind == 'month' }}" hx-get="/?period={{ month_key }}" hx-select="#spending"
+             hx-target="#spending" hx-swap="outerHTML" hx-push-url="true" {{ 'aria-current="true"'|safe if p.kind == 'month' }}>Month</a>
+          <a href="/?period={{ year_key }}" class="{{ 'on' if p.kind == 'year' }}" hx-get="/?period={{ year_key }}" hx-select="#spending"
+             hx-target="#spending" hx-swap="outerHTML" hx-push-url="true" {{ 'aria-current="true"'|safe if p.kind == 'year' }}>Year</a>
+        </div>
+        <a class="step" href="/?period={{ p.prev }}" hx-get="/?period={{ p.prev }}" hx-select="#spending" hx-target="#spending"
+           hx-swap="outerHTML" hx-push-url="true" aria-label="Previous {{ p.kind }}">{{ icon('chev-l', 18) }}</a>
+        <span class="label" aria-live="polite">{{ p.label }}</span>
+        {% if p.next %}
+        <a class="step" href="/?period={{ p.next }}" hx-get="/?period={{ p.next }}" hx-select="#spending" hx-target="#spending"
+           hx-swap="outerHTML" hx-push-url="true" aria-label="Next {{ p.kind }}">{{ icon('chev-r', 18) }}</a>
+        {% else %}<span class="step off" aria-hidden="true">{{ icon('chev-r', 18) }}</span>{% endif %}
+      </div>
+    </div>
+
+    {% set sp = d.spending %}
+    {% set rv = d.review %}
+    {% set tx_link = ('/transactions?month=' ~ p.key) if p.kind == 'month' else ('/transactions?date_from=' ~ p.key ~ '-01-01&date_to=' ~ p.key ~ '-12-31') %}
+
+    <section class="card w4" aria-labelledby="rev-h">
+      <div class="tile-title"><span class="ic">{{ icon('calendar') }}</span><span id="rev-h">{{ 'So far in ' if p.end >= d.today else 'In ' }}{{ p.label }}</span></div>
+      {% if rv.total %}
+      <p class="review-line">you spent <strong>{{ rv.total|eur }}</strong>
+        {% set diff = rv.total - rv.previous %}
+        {% if rv.previous %}<span class="small {{ 'delta-up' if diff > 0 else 'delta-down' }}">{{ diff|abs|eur }} {{ 'more' if diff > 0 else 'less' }} than {{ 'the month' if p.kind == 'month' else 'the year' }} before{{ ' (so far)' if p.end >= d.today }}</span>{% endif %}
+      </p>
+      <div class="chips" aria-label="Biggest categories">
+        {% for c in rv.top %}<a class="chip" href="{{ tx_link }}&category={{ c.key }}" style="color:var(--ink);text-decoration:none"><span class="dot fill-g{{ group_slot[c.group] }}"></span>{{ c.label }} {{ c.amount|eur }}</a>{% endfor %}
+      </div>
+      {% else %}
+      <p class="muted">No spending booked in {{ p.label }}{{ ' yet' if p.end >= d.today }}.</p>
+      {% endif %}
+      <p class="small" style="margin:12px 0 0"><a href="{{ tx_link }}">All transactions in {{ p.label }}</a></p>
+    </section>
+
+    <section class="card w8" aria-labelledby="dist-h">
+      <div class="tile-title"><span class="ic">{{ icon('pie') }}</span><span id="dist-h">Where the money went</span></div>
+      {% if sp.groups %}
+      <div class="donut-wrap">
+        <svg class="donut" viewBox="0 0 {{ donut.size }} {{ donut.size }}" role="img"
+             aria-label="Spending in {{ p.label }} by group: {% for g in sp.groups %}{{ g.label }} {{ g.amount|eur }}{{ ', ' if not loop.last }}{% endfor %}">
+          {% for s in donut.slices %}{% set g = sp.groups[loop.index0] %}
+          {% if s.full %}<circle cx="{{ donut.c }}" cy="{{ donut.c }}" r="{{ donut.r_mid }}" fill="none" stroke-width="{{ donut.thickness }}"
+                  style="stroke:var(--s{{ group_slot[g.key] }})"><title>{{ g.label }}: {{ g.amount|eur }}</title></circle>
+          {% else %}<path d="{{ s.path }}" class="fill-g{{ group_slot[g.key] }}"><title>{{ g.label }}: {{ g.amount|eur }} ({{ (g.share * 100)|round|int }} %)</title></path>{% endif %}
+          {% endfor %}
+          <text x="50%" y="47%" text-anchor="middle" class="center-v">{{ sp.total|eur }}</text>
+          <text x="50%" y="59%" text-anchor="middle" class="center-l">spent</text>
+        </svg>
+        <ul class="legend">
+          {% for g in sp.groups|sort(attribute='amount', reverse=True) %}
+          <li><span class="dot fill-g{{ group_slot[g.key] }}"></span><span>{{ g.label }}</span>
+            <span class="pct">{{ (g.share * 100)|round|int }} %</span><span class="amt">{{ g.amount|eur }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+      <ul class="catlist" aria-label="Categories">
+        {% set top = sp.categories[0].amount %}
+        {% for c in sp.categories[:6] %}
+        <li><a href="{{ tx_link }}&category={{ c.key }}">{{ c.label }}</a><span class="num">{{ c.amount|eur }}</span>
+          <span class="bar"><i class="fill-g{{ group_slot[c.group] }}" style="width:{{ (c.amount / top * 100)|round(1) }}%"></i></span></li>
+        {% endfor %}
+      </ul>
+      {% if sp.categories|length > 6 %}
+      <details class="small" style="margin-top:6px"><summary class="muted">All {{ sp.categories|length }} categories</summary>
+        <ul class="catlist">
+          {% for c in sp.categories[6:] %}
+          <li><a href="{{ tx_link }}&category={{ c.key }}">{{ c.label }}</a><span class="num">{{ c.amount|eur }}</span>
+            <span class="bar"><i class="fill-g{{ group_slot[c.group] }}" style="width:{{ (c.amount / top * 100)|round(1) }}%"></i></span></li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+      {% else %}
+      <p class="muted">No spending booked in {{ p.label }}{{ ' yet' if p.end >= d.today }}.</p>
+      {% endif %}
+    </section>
+
+    <section class="card w8 bars" aria-labelledby="mon-h">
+      <div class="tile-title"><span class="ic">{{ icon('bars') }}</span><span id="mon-h">Spending per month</span></div>
+      {% set mb = monthly_bars %}
+      <svg viewBox="0 0 {{ mb.width }} {{ mb.height + 18 }}" role="img" aria-label="Spending per month, last 12 months: fixed costs and day-to-day">
+        <line x1="0" x2="{{ mb.width }}" y1="{{ mb.base }}" y2="{{ mb.base }}" class="grid"/>
+        {% for b in mb.bars %}
+        {% if p.kind == 'month' and b.label == p.key %}<rect class="sel-band" x="{{ b.x - 3 }}" y="0" width="{{ b.w + 6 }}" height="{{ mb.height }}" rx="6"/>{% endif %}
+        {% if b.lower_path %}<path class="lo" d="{{ b.lower_path }}"/>{% endif %}
+        {% if b.upper_path %}<path class="hi" d="{{ b.upper_path }}"/>{% endif %}
+        <text x="{{ b.cx }}" y="{{ mb.height + 14 }}" text-anchor="middle" class="axis">{{ month_letter(b.label) }}</text>
+        <a href="/?period={{ b.label }}" hx-get="/?period={{ b.label }}" hx-select="#spending" hx-target="#spending" hx-swap="outerHTML" hx-push-url="true">
+          <rect class="hit" x="{{ b.x - 3 }}" y="0" width="{{ b.w + 6 }}" height="{{ mb.height + 18 }}"
+                data-tip="{{ month_name(b.label) }}: {{ (b.lower + b.upper)|eur }} (fixed {{ b.lower|eur }}, day-to-day {{ b.upper|eur }})">
+            <title>{{ month_name(b.label) }}: {{ (b.lower + b.upper)|eur }}</title></rect></a>
+        {% endfor %}
+      </svg>
+      <div class="keys"><span class="k1">Fixed costs</span><span class="k2">Day-to-day</span></div>
+      <div class="tip" aria-live="polite">Tap a month to open it.</div>
+    </section>
+
+    {% for c in d.cards %}
+    <section class="card w4" aria-labelledby="card-{{ c.key }}">
+      <div class="tile-title"><span class="ic g{{ group_slot[c.group] }}">{{ icon({'housing': 'house', 'car': 'car', 'groceries': 'cart', 'kids': 'stroller', 'animals': 'paw'}[c.key]) }}</span>
+        <span id="card-{{ c.key }}">{{ c.label }}</span></div>
+      {% if c.average is none %}
+      <div class="big">–</div><div class="sub">Average shows after one full month of history.</div>
+      {% else %}
+      <div class="big">ø {{ c.average|eur }}<span class="unit"> / month</span></div>
+      <div class="sub">{{ p.label }}: {{ c.now|eur }} · average of {{ c.full_months }} full {{ 'month' if c.full_months == 1 else 'months' }}</div>
+      {% endif %}
+      <svg class="mini" viewBox="0 0 {{ c.bars.width }} {{ c.bars.height }}" preserveAspectRatio="none" role="img"
+           aria-label="{{ c.label }} per month, last 12 months">
+        {% for b in c.bars.bars %}{% set m = c.series[loop.index0][0] %}
+        {% if b.path %}<path d="{{ b.path }}" class="g{{ group_slot[c.group] }} {{ 'now' if (p.kind == 'month' and m == p.key) or (p.kind == 'year' and m[:4] == p.key) else 'past' }}"><title>{{ month_name(m) }}: {{ b.v|eur }}</title></path>{% endif %}
+        {% endfor %}
+      </svg>
+    </section>
     {% endfor %}
-  </table>
-  <p class="small"><a href="/recurring">All recurring payments and contracts</a></p>
-  {% else %}
-  <p class="muted">No recurring payments found yet. They show up after a few months of history.</p>
-  {% endif %}
+
+    <div class="dash-head" id="analyses" style="grid-column: 1 / -1"><h2>Your analyses</h2></div>
+    {% for a in d.analyses %}
+    <section class="card w4" aria-labelledby="an-{{ a.id }}">
+      <div class="tile-title"><span class="ic">{{ icon('search') }}</span><span id="an-{{ a.id }}">{{ a.name }}</span>
+        <form method="post" action="/analyses/{{ a.id }}/delete" style="margin-left:auto">
+          <input type="hidden" name="period" value="{{ p.key }}">
+          <button class="analysis-del" type="submit" aria-label="Delete analysis {{ a.name }}" title="Delete">{{ icon('x', 16) }}</button>
+        </form></div>
+      <div class="big">{{ a.result.total|eur }}</div>
+      <div class="sub">{% if a.result.count %}{{ a.result.count }} {{ 'payment' if a.result.count == 1 else 'payments' }} · {{ a.result.first }}{% if a.result.last != a.result.first %} to {{ a.result.last }}{% endif %}{% else %}Nothing matches yet.{% endif %}</div>
+      <div class="chips" style="margin-top:10px">
+        {% for l in a.category_labels %}<span class="chip">{{ l }}</span>{% endfor %}
+        {% if a.match_text %}<span class="chip">{{ icon('search', 14) }} “{{ a.match_text }}”</span>{% endif %}
+        {% if a.date_from or a.date_to %}<span class="chip">{{ icon('calendar', 14) }} {{ a.date_from or '…' }} – {{ a.date_to or 'now' }}</span>{% endif %}
+      </div>
+      {% set q = a.match_text or '' %}
+      <p class="small" style="margin:10px 0 0"><a href="/transactions?q={{ q|urlencode }}&month=all{% if a.date_from %}&date_from={{ a.date_from }}{% endif %}{% if a.date_to %}&date_to={{ a.date_to }}{% endif %}{% if a.category_labels|length == 1 %}&category={{ a.categories }}{% endif %}">See the payments</a></p>
+    </section>
+    {% endfor %}
+
+    <section class="card w4 new-analysis">
+      <details {{ 'open' if analysis_error or not d.analyses }}>
+        <summary>{{ icon('plus', 18) }} New analysis</summary>
+        <p class="small muted" style="margin:8px 0 0">Follow a trip, a project or a hobby: pick categories, a word that appears in
+          the name, and/or dates. For example "Italy": Holidays, December 2025.</p>
+        {% if analysis_error %}<div class="error small" style="margin-top:10px">{{ analysis_error }}</div>{% endif %}
+        <form method="post" action="/analyses" class="form-grid">
+          <input type="hidden" name="period" value="{{ p.key }}">
+          <label>Name<input name="name" required maxlength="40" placeholder="Italy"></label>
+          <label>Name or description contains<input name="match_text" maxlength="60" placeholder="optional, e.g. bike"></label>
+          <div class="row">
+            <label>From<input type="date" name="date_from"></label>
+            <label>To<input type="date" name="date_to"></label>
+          </div>
+          <div class="cat-picks" role="group" aria-label="Categories">
+            {% for c in expense_categories %}<label><input type="checkbox" name="categories" value="{{ c.key }}">{{ c.label }}</label>{% endfor %}
+          </div>
+          <div><button type="submit">Save analysis</button></div>
+        </form>
+      </details>
+    </section>
+  </div>
+
+  <div class="dash-head" style="grid-column: 1 / -1"><h2>Money</h2></div>
+
+  <section class="card w4" aria-labelledby="acc-h">
+    <div class="tile-title"><span class="ic">{{ icon('wallet') }}</span><span id="acc-h">Across your accounts</span></div>
+    {% set ac = d.accounts %}
+    <div class="big">{{ ac.total|eur }}</div>
+    <div class="sub">over {{ ac['items']|length }} {{ 'account' if ac['items']|length == 1 else 'accounts' }}</div>
+    {% if acc_donut.slices %}
+    <div class="donut-wrap" style="margin-top:12px">
+      <svg class="donut" viewBox="0 0 {{ acc_donut.size }} {{ acc_donut.size }}" role="img" aria-label="Balance per account">
+        {% set pos = ac['items']|selectattr('balance', 'gt', 0)|list %}
+        {% for s in acc_donut.slices %}{% set a = pos[loop.index0] %}
+        {% if s.full %}<circle cx="{{ acc_donut.c }}" cy="{{ acc_donut.c }}" r="{{ acc_donut.r_mid }}" fill="none" stroke-width="{{ acc_donut.thickness }}" style="stroke:var(--s{{ acc_slot[a.id] }})"><title>{{ a.name }}: {{ a.balance|eur }}</title></circle>
+        {% else %}<path d="{{ s.path }}" class="fill-g{{ acc_slot[a.id] }}"><title>{{ a.name }}: {{ a.balance|eur }}</title></path>{% endif %}
+        {% endfor %}
+      </svg>
+      <ul class="legend">
+        {% for a in ac['items'] %}
+        <li><span class="dot fill-g{{ acc_slot[a.id] }}"></span><span>{{ a.name }}</span><span class="pct"></span>
+          <span class="amt {{ 'neg' if a.balance < 0 }}">{{ a.balance|eur }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if ac.missing %}<p class="small muted" style="margin:10px 0 0">No balance yet for {{ ac.missing|join(', ') }}.</p>{% endif %}
+  </section>
+
+  <section class="card w8" aria-labelledby="worth-h">
+    <div class="tile-title"><span class="ic">{{ icon('trend') }}</span><span id="worth-h">Your money over time</span></div>
+    {% if worth %}
+    {% set hs = d.history.series %}
+    {% set change = hs[-1][1] - hs[0][1] %}
+    <div class="big">{{ hs[-1][1]|eur }}</div>
+    <div class="sub"><span class="{{ 'delta-down' if change >= 0 else 'delta-up' }}">{{ '+' if change >= 0 }}{{ change|eur }}</span> since {{ hs[0][0] }}</div>
+    {% with g = worth, chart_label = 'Total balance of your accounts at each month end since ' ~ hs[0][0] %}{% include "_balance_chart.html" %}{% endwith %}
+    {% if d.history.missing %}<p class="small muted" style="margin:6px 0 0">Without {{ d.history.missing|join(', ') }} (no balance known).</p>{% endif %}
+    {% else %}
+    <p class="muted">Needs a known balance on your accounts and at least two months of history.</p>
+    {% endif %}
+  </section>
+
+  <section class="card w4" aria-labelledby="up-h">
+    <div class="tile-title"><span class="ic">{{ icon('calendar-clock') }}</span><span id="up-h">Coming up</span></div>
+    {% if upcoming %}
+    <table class="upcoming">
+      {% for s in upcoming %}
+      <tr><td class="nowrap small muted">{{ s.next_date[5:] }}</td><td>{{ s.merchant[:34] }}</td>
+        <td class="num {{ 'neg' if s.average < 0 }}">{{ s.average|eur }}</td></tr>
+      {% endfor %}
+    </table>
+    <p class="small" style="margin:10px 0 0"><a href="/recurring">All recurring payments and contracts</a></p>
+    {% else %}
+    <p class="muted">No recurring payments found yet. They show up after a few months of history.</p>
+    {% endif %}
+  </section>
 </div>
+
+<script>
+/* One readout per card: whatever bar or slice the pointer or keyboard is on. */
+document.addEventListener("pointerover", e => {
+  const t = e.target.closest("[data-tip]"); if (!t) return;
+  const tip = t.closest(".card").querySelector(".tip"); if (tip) tip.textContent = t.dataset.tip;
+});
+</script>
 {% endif %}
 {% endblock %}
