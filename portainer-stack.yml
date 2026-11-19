@@ -1,9 +1,9 @@
 # Portainer stack for the NAS. The image is built once over SSH (see README "Deploy on the NAS"):
-#   cd /volume1/Docker/kasboek/src && docker build -t kasboek:0.2.0 .
+#   cd /volume1/Docker/kasboek/src && docker build -t kasboek:0.3.0 .
 # Bind mounts MUST be absolute paths under /volume1/Docker/kasboek: a relative path lands on the 1.8 GB rootfs.
 services:
   kasboek:
-    image: kasboek:0.2.0
+    image: kasboek:0.3.0
     pull_policy: never          # built locally on the NAS; never look for it on Docker Hub
     container_name: kasboek
     restart: unless-stopped

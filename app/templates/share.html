@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Fair share · Kasboek{% endblock %}
+{% block content %}
+<h1>Fair share</h1>
+{% if error %}<div class="error card">{{ error }}</div>{% endif %}
+
+{% macro people_form(open_) %}
+<form method="post" action="/share/people" class="form-grid">
+  {% for i in range(2) %}
+  {% set p = people[i] if people|length > i else {} %}
+  <fieldset class="person-set">
+    <legend>Person {{ i + 1 }}</legend>
+    <label>Name<input name="name_{{ i }}" value="{{ p.name or '' }}" required maxlength="30" placeholder="{{ 'Your first name' if i == 0 else "Your partner's first name" }}"></label>
+    <label>Their accounts that aren't in Kasboek (IBAN, optional)
+      <input name="ibans_{{ i }}" value="{{ (p.ibans or [])|join(' ') }}" placeholder="NL00BANK0123456789" autocomplete="off"></label>
+    <label>Net income a month (only for "in proportion to income")
+      <input name="income_{{ i }}" value="{{ p.income|eur if p.income else '' }}" inputmode="decimal" placeholder="optional"></label>
+  </fieldset>
+  {% endfor %}
+  <fieldset class="person-set">
+    <legend>How should the household costs be split?</legend>
+    <label class="radio"><input type="radio" name="mode" value="equal" {{ 'checked' if mode != 'income' }}> Half each</label>
+    <label class="radio"><input type="radio" name="mode" value="income" {{ 'checked' if mode == 'income' }}> In proportion to income</label>
+  </fieldset>
+  <fieldset class="person-set">
+    <legend>Whose account is it?</legend>
+    <p class="small muted" style="margin:0">Joint: you both pay money in. Spending from it counts in the ratio of what each of you
+      put in. Savings accounts never count.</p>
+    {% for a in accounts if a.bank != 'manual' %}
+    <label class="owner-row"><span>{{ a.name }} <span class="muted small">{{ a.kind }}</span></span>
+      <select name="owner_{{ a.id }}">
+        <option value="shared" {{ 'selected' if a.owner == 'shared' }}>Joint</option>
+        {% for p in people %}<option value="{{ p.name }}" {{ 'selected' if a.owner == p.name }}>{{ p.name }}</option>{% endfor %}
+        {% if a.owner != 'shared' and a.owner not in people|map(attribute='name') %}<option value="{{ a.owner }}" selected>{{ a.owner }} (not counted)</option>{% endif %}
+      </select></label>
+    {% endfor %}
+    {% if not people %}<p class="small muted" style="margin:0">Save the names first, then pick each person's accounts here.</p>{% endif %}
+  </fieldset>
+  <div><button type="submit">Save</button></div>
+</form>
+{% endmacro %}
+
+{% if not people %}
+<div class="card">
+  <div class="tile-title"><span class="ic">{{ icon('scale') }}</span><span>Who is in the household?</span></div>
+  <p class="muted">Fair share shows whether you both carry your part of the household costs: everything you pay from your own
+    accounts, your share of what the joint account pays, and the cash and card payments you log here. Start with your names.</p>
+  {{ people_form(true) }}
+</div>
+{% else %}
+{% set p = r.period %}
+{% set names = people|map(attribute='name')|list %}
+<div class="dash">
+
+  <section class="card w8" aria-labelledby="bal-h">
+    <div class="dash-head" style="margin-top:0">
+      <div class="tile-title" style="margin:0"><span class="ic">{{ icon('scale') }}</span><span id="bal-h">Who carried what</span></div>
+      <div class="period">
+        <div class="seg" role="group" aria-label="Period">
+          <a href="/share?period={{ p.key if p.kind == 'month' else (p.switch if p.kind == 'year' else today[:7]) }}" class="{{ 'on' if p.kind == 'month' }}">Month</a>
+          <a href="/share?period={{ p.key if p.kind == 'year' else (p.switch if p.kind == 'month' else today[:4]) }}" class="{{ 'on' if p.kind == 'year' }}">Year</a>
+          <a href="/share?period=all" class="{{ 'on' if p.kind == 'all' }}">All</a>
+        </div>
+        {% if p.kind != 'all' %}
+        <a class="step" href="/share?period={{ p.prev }}" aria-label="Previous {{ p.kind }}">{{ icon('chev-l', 18) }}</a>
+        <span class="label">{{ p.label }}</span>
+        {% if p.next %}<a class="step" href="/share?period={{ p.next }}" aria-label="Next {{ p.kind }}">{{ icon('chev-r', 18) }}</a>
+        {% else %}<span class="step off" aria-hidden="true">{{ icon('chev-r', 18) }}</span>{% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    {% if r.settle %}
+    <p class="review-line">{{ r.settle.from }} owes {{ r.settle.to }} <strong>{{ r.settle.amount|eur }}</strong>
+      <span class="small muted">to be even for {{ p.label if p.kind != 'all' else 'all time' }}</span></p>
+    {% elif r.total or r.people|sum(attribute='personal') %}
+    <p class="review-line">You're even <strong>{{ icon('check', 22) }} In balance</strong></p>
+    {% else %}
+    <p class="muted">No household spending in this period yet.</p>
+    {% endif %}
+    {% if r.note %}<p class="small warn">{{ r.note }}</p>{% endif %}
+
+    {% set paid_total = r.people|sum(attribute='paid') %}
+    {% if paid_total > 0 %}
+    <div class="share-bar" role="img" aria-label="{% for x in r.people %}{{ x.name }} paid {{ (x.paid / paid_total * 100)|round|int }}%{{ ', ' if not loop.last }}{% endfor %}; the target is {{ (r.people[0].target * 100)|round|int }}% for {{ r.people[0].name }}">
+      {% for x in r.people %}<i class="p{{ loop.index }}" style="width:{{ (x.paid / paid_total * 100)|round(2) }}%"></i>{% endfor %}
+      {% if r.total == paid_total %}<b class="target" style="left:{{ (r.people[0].target * 100)|round(2) }}%" title="Fair split"></b>{% endif %}
+    </div>
+    <div class="share-keys small">
+      {% for x in r.people %}<span><i class="dot p{{ loop.index }}"></i>{{ x.name }} {{ (x.paid / paid_total * 100)|round|int }}%</span>{% endfor %}
+      {% if r.total == paid_total %}<span class="muted">line = fair split ({{ (r.people[0].target * 100)|round|int }} / {{ (r.people[1].target * 100)|round|int }})</span>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="table-wrap"><table class="share-table">
+      <tr><th></th>{% for x in r.people %}<th class="num">{{ x.name }}</th>{% endfor %}</tr>
+      <tr><td>Own accounts and logged<span class="hint">cards, transfers, cash</span></td>{% for x in r.people %}<td class="num">{{ x.direct|eur }}</td>{% endfor %}</tr>
+      <tr><td>From the joint account<span class="hint">{{ r.joint_spent|eur }}, split by deposits</span></td>{% for x in r.people %}<td class="num">{{ x.from_joint|eur }}</td>{% endfor %}</tr>
+      <tr class="sum"><td>Paid</td>{% for x in r.people %}<td class="num">{{ x.paid|eur }}</td>{% endfor %}</tr>
+      <tr><td>Fair part<span class="hint">{{ 'by income' if r.mode == 'income' else 'half' }} of {{ r.total|eur }} household costs</span></td>{% for x in r.people %}<td class="num">{{ (x.fair - x.personal)|eur }}</td>{% endfor %}</tr>
+      <tr><td>Only for them</td>{% for x in r.people %}<td class="num">{{ x.personal|eur }}</td>{% endfor %}</tr>
+      <tr class="sum"><td>Difference</td>{% for x in r.people %}<td class="num {{ 'delta-down' if x.diff >= 0.5 else 'delta-up' if x.diff <= -0.5 }}">{{ '+' if x.diff > 0 }}{{ x.diff|eur }}</td>{% endfor %}</tr>
+      <tr><td class="muted">Put into the joint account</td>{% for x in r.people %}<td class="num muted">{{ x.deposits|eur }}</td>{% endfor %}</tr>
+    </table></div>
+  </section>
+
+  <section class="card w4" id="log" aria-labelledby="log-h">
+    <div class="tile-title"><span class="ic">{{ icon('plus') }}</span><span id="log-h">Log a payment</span></div>
+    <p class="small muted" style="margin:0">Cash, or paid from an account that isn't in Kasboek. Card payments from your accounts come in by themselves.</p>
+    {% if log_error %}<div class="error small" style="margin-top:10px">{{ log_error }}</div>{% endif %}
+    {% if logged %}<div class="ok small" style="margin-top:10px">Logged.</div>{% endif %}
+    {% set f = form %}
+    <form method="post" action="/share/log" class="form-grid">
+      <input type="hidden" name="period" value="{{ p.key if p.kind != 'month' or p.key != today[:7] else '' }}">
+      <div class="row">
+        <label>Amount<input name="amount" value="{{ f.amount or '' }}" inputmode="decimal" required placeholder="85,00" autocomplete="off"></label>
+        <label>Date<input type="date" name="date" value="{{ f.date or today }}" required max="{{ today }}"></label>
+      </div>
+      <label>What<input name="what" value="{{ f.what or '' }}" maxlength="120" placeholder="Wardrobe via Marktplaats"></label>
+      <label>Category
+        <select name="category">{% for c in expense_categories %}<option value="{{ c.key }}" {{ 'selected' if c.key == (f.category or 'home') }}>{{ c.label }}</option>{% endfor %}</select></label>
+      <div class="pick" role="radiogroup" aria-label="Who paid">
+        <span class="small muted">Who paid</span>
+        {% for n in names %}<label><input type="radio" name="payer" value="{{ n }}" {{ 'checked' if (f.payer or names[0]) == n }}>{{ n }}</label>{% endfor %}
+        <label><input type="radio" name="payer" value="shared" {{ 'checked' if f.payer == 'shared' }}>Joint cash</label>
+      </div>
+      <div class="pick" role="radiogroup" aria-label="How">
+        <span class="small muted">How</span>
+        <label><input type="radio" name="method" value="cash" {{ 'checked' if (f.method or 'cash') == 'cash' }}>Cash</label>
+        <label><input type="radio" name="method" value="elsewhere" {{ 'checked' if f.method == 'elsewhere' }}>Other account or card</label>
+      </div>
+      <label class="radio"><input type="checkbox" name="personal" value="1" {{ 'checked' if f.personal }}> Only for the person who paid, not a shared cost</label>
+      <div><button type="submit">Log payment</button></div>
+    </form>
+  </section>
+
+  {% if suggestions %}
+  <section class="card w4" aria-labelledby="sug-h">
+    <div class="tile-title"><span class="ic">{{ icon('wallet') }}</span><span id="sug-h">Who paid this into the joint account?</span></div>
+    <p class="small muted" style="margin:0 0 8px">Money that came in more than once from an account that isn't in Kasboek. Tell Kasboek
+      whose it is and it counts as their deposit (not as income anyone earned).</p>
+    {% for s in suggestions %}
+    <div class="sug">
+      <div><strong>{{ s.name or 'Unknown' }}</strong> <span class="muted small">··{{ s.iban[-4:] }}</span>
+        <div class="small muted">{{ s.count }}× · {{ s.total|eur }} · last {{ s.last }}</div></div>
+      <form method="post" action="/share/assign" class="chips">
+        <input type="hidden" name="iban" value="{{ s.iban }}">
+        {% for n in names %}<button class="chip-btn" name="person" value="{{ n }}">{{ n }}</button>{% endfor %}
+      </form>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if r.months|length > 1 %}
+  <section class="card w4" aria-labelledby="mon-h">
+    <div class="tile-title"><span class="ic">{{ icon('calendar') }}</span><span id="mon-h">Paid per month</span></div>
+    <div class="table-wrap"><table class="share-table">
+      <tr><th>Month</th>{% for n in names %}<th class="num">{{ n }}</th>{% endfor %}</tr>
+      {% for m in r.months|reverse %}<tr><td><a href="/transactions?month={{ m.month }}">{{ month_name(m.month) }}</a></td>{% for n in names %}<td class="num">{{ m.paid[n]|eur }}</td>{% endfor %}</tr>{% endfor %}
+    </table></div>
+    <p class="small muted">Joint-account spending is split by the deposits over the whole period.</p>
+  </section>
+  {% endif %}
+
+  {% if r.wallets %}
+  <section class="card w4" aria-labelledby="cash-h">
+    <div class="tile-title"><span class="ic">{{ icon('wallet') }}</span><span id="cash-h">Cash</span></div>
+    <div class="table-wrap"><table class="share-table">
+      <tr><th></th><th class="num">From the bank</th><th class="num">Logged</th><th class="num">Left</th></tr>
+      {% for w in r.wallets %}<tr><td>{{ 'Joint' if w.owner == 'shared' else w.owner }}</td><td class="num">{{ w.withdrawn|eur }}</td>
+        <td class="num">{{ w.logged|eur }}</td><td class="num {{ 'warn' if w.withdrawn and w.left < 0 }}">{{ w.left|eur if w.withdrawn else '–' }}</td></tr>{% endfor %}
+    </table></div>
+    <p class="small muted">Cash from an ATM isn't spending until you log what you bought with it. "Left" is what should still be in the
+      wallet; a large amount means some cash spending wasn't logged yet. Counted from {{ r.since }}, the day you started.
+      Cash from a bank that isn't in Kasboek shows no "left".</p>
+  </section>
+  {% endif %}
+
+  <section class="card w8" id="logged" aria-labelledby="ent-h">
+    <div class="tile-title"><span class="ic">{{ icon('calendar-clock') }}</span><span id="ent-h">Logged payments</span></div>
+    {% if entries %}
+    <div class="table-wrap"><table class="share-table">
+      {% for t in entries %}
+      <tr><td class="nowrap">{{ t.date }}</td>
+        <td>{{ t.counterparty }}<div class="small muted">{{ t.category_label }} · {{ t.account_name }}{% if t.personal_for %} · only for {{ t.personal_for }}{% endif %}</div></td>
+        <td class="num">{{ t.amount|abs|eur }}</td>
+        <td><form method="post" action="/share/{{ t.id }}/delete" data-q="Delete “{{ t.counterparty }}” ({{ t.amount|abs|eur }})?"
+                  onsubmit="return confirm(this.dataset.q)">
+          <input type="hidden" name="period" value="{{ p.key }}">
+          <button class="analysis-del" aria-label="Delete {{ t.counterparty }}">{{ icon('x', 16) }}</button></form></td></tr>
+      {% endfor %}
+    </table></div>
+    <p class="small muted">Change a category on the <a href="/transactions?q=&amp;month=all">Transactions</a> page, like any other booking.
+      There you can also mark any booking as only for one of you.</p>
+    {% else %}
+    <p class="muted">Nothing logged yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="card w4">
+    <details class="new-analysis" {{ 'open' if error }}>
+      <summary>{{ icon('house', 18) }} People and accounts</summary>
+      {{ people_form(false) }}
+    </details>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

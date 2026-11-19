@@ -36,7 +36,7 @@ Paths are absolute on purpose: a relative bind mount would land on the 1.8 GB ro
    `Docker` share (`/volume1/Docker` on the NAS, the same volume as Docker itself), with the local app **stopped**
    (only one Kasboek may sync with the banks).
 2. Over SSH on the NAS, once:
-   `chown -R 1000:1000 /volume1/Docker/kasboek/data && cd /volume1/Docker/kasboek/src && docker build -t kasboek:0.2.0 .`
+   `chown -R 1000:1000 /volume1/Docker/kasboek/data && cd /volume1/Docker/kasboek/src && docker build -t kasboek:0.3.0 .`
 3. Portainer: Stacks → Add stack → Web editor → paste `portainer-stack.yml`; add the environment variables
    `KASBOEK_USER` and `KASBOEK_PASSWORD` (the household login); deploy.
 4. Open `http://<NAS address>:8420`. For HTTPS, add a proxy host in Nginx Proxy Manager to `<NAS address>:8420`.

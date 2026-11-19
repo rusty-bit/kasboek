@@ -32,7 +32,8 @@ templates.env.globals["kinds"] = store.KINDS
 
 SOURCE_LABELS = {"manual": "set by you", "transfer": "own transfer", "rule": "rule", "memory": "learned",
                  "iban": "learned (same IBAN)", "chain": "learned (same chain)", "keyword": "keyword",
-                 "mcc": "shop type from bank", "llm": "AI guess", "default": "unsure"}
+                 "mcc": "shop type from bank", "llm": "AI guess", "default": "unsure",
+                 "household": "partner's account"}
 templates.env.globals["month_name"] = lambda m: f"{analytics.MONTH_NAMES[int(m[5:7]) - 1]} {m[:4]}"
 templates.env.globals["month_letter"] = lambda m: analytics.MONTH_NAMES[int(m[5:7]) - 1][:1]
 templates.env.globals["freq_label"] = lambda f: rc.FREQ_LABELS.get(f, f)
@@ -126,6 +127,7 @@ def render(request, name, ctx=None, status=200, con=None):
             return render(request, name, ctx, status, c)
     ctx.setdefault("queue_count", store.queue_count(con))
     ctx.setdefault("categories", store.categories(con))
+    ctx.setdefault("people_names", store.people_names(con))
     ctx.setdefault("theme", "light" if request.cookies.get("theme") == "light" else "dark")
     return templates.TemplateResponse(request, name, ctx, status_code=status)
 
@@ -198,6 +200,88 @@ def analysis_delete(aid: int, period: str = Form("")):
     with db.db() as con:
         store.delete_analysis(con, aid)
     return RedirectResponse(f"/?period={period}#analyses" if period else "/#analyses", status_code=303)
+
+
+# --- fair share -----------------------------------------------------------------------------------
+def _share_page(request, con, status=200, period="", **ctx):
+    today = date.today()
+    ps = store.people(con)
+    ctx.setdefault("form", {})
+    data = {"page": "share", "people": ps, "mode": store.share_mode(con), "accounts": store.accounts(con),
+            "today": today.isoformat(), "expense_categories": [c for c in store.categories(con) if c["kind"] == "expense"]}
+    if ps:
+        data.update(r=store.fair_share(con, period, today), entries=store.manual_entries(con, limit=30),
+                    suggestions=store.joint_deposit_suggestions(con, today))
+    return render(request, "share.html", {**data, **ctx}, status, con)
+
+
+@app.get("/share")
+def share_page(request: Request, period: str = "", logged: str = ""):
+    with db.db() as con:
+        return _share_page(request, con, period=period, logged=logged == "1")
+
+
+@app.post("/share/people")
+async def share_people(request: Request):
+    form = await request.form()
+    new = [{"name": form.get(f"name_{i}", ""), "ibans": form.get(f"ibans_{i}", ""), "income": form.get(f"income_{i}", "")}
+           for i in range(2)]
+    owners = {k[6:]: v for k, v in form.items() if k.startswith("owner_") and k[6:].isdigit()}
+    with db.db() as con:
+        try:
+            store.save_people(con, new, form.get("mode", "equal"), owners=owners)
+        except ValueError as e:
+            return _share_page(request, con, 400, error=str(e))
+    return RedirectResponse("/share", status_code=303)
+
+
+@app.post("/share/log")
+def share_log(request: Request, date_: str = Form("", alias="date"), amount: str = Form(""), what: str = Form(""),
+              category: str = Form(""), payer: str = Form(""), method: str = Form("cash"), personal: str = Form(""),
+              period: str = Form("")):
+    form = {"date": date_, "amount": amount, "what": what, "category": category, "payer": payer, "method": method,
+            "personal": bool(personal)}
+    try:
+        value = search.to_number(amount.strip().lstrip("€").strip().lstrip("-")) if amount.strip() else 0
+    except ValueError:
+        value = 0
+    with db.db() as con:
+        try:
+            store.add_manual(con, date_, value, what, category, payer, method, bool(personal))
+        except ValueError as e:
+            return _share_page(request, con, 400, period=period, log_error=str(e), form=form)
+    return RedirectResponse(f"/share?logged=1&period={quote(period)}#log", status_code=303)
+
+
+@app.post("/share/{tx_id}/delete")
+def share_delete(request: Request, tx_id: int, period: str = Form("")):
+    with db.db() as con:
+        try:
+            store.delete_manual(con, tx_id)
+        except ValueError as e:
+            return _share_page(request, con, 400, period=period, error=str(e))
+    return RedirectResponse(f"/share?period={quote(period)}#logged", status_code=303)
+
+
+@app.post("/share/assign")
+def share_assign(request: Request, iban: str = Form(...), person: str = Form(...)):
+    with db.db() as con:
+        try:
+            store.assign_iban(con, iban, person)
+        except ValueError as e:
+            return _share_page(request, con, 400, error=str(e))
+    return RedirectResponse("/share", status_code=303)
+
+
+@app.post("/transactions/{tx_id}/personal")
+def tx_personal(request: Request, tx_id: int, person: str = Form("")):
+    with db.db() as con:
+        try:
+            store.set_personal(con, tx_id, person)
+        except ValueError as e:
+            return _tx_row(request, con, tx_id, note=str(e))
+        note = f"Only for {person}: not a shared cost." if person else "Counts as a shared household cost."
+        return _tx_row(request, con, tx_id, note=note)
 
 
 # --- import ---------------------------------------------------------------------------------------
@@ -333,7 +417,8 @@ def _tx_row(request, con, tx_id, before=None, **ctx):
     if not others:
         return resp
     tpl, cats = templates.get_template("_tx_row.html"), store.categories(con)
-    extra = "".join("<template>" + tpl.render({"t": store.transaction(con, i), "categories": cats, "oob": True})
+    extra = "".join("<template>" + tpl.render({"t": store.transaction(con, i), "categories": cats, "oob": True,
+                                                   "people_names": store.people_names(con)})
                     + "</template>" for i in others)
     return HTMLResponse(resp.body.decode() + extra)
 

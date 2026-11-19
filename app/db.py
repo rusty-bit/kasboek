@@ -155,6 +155,7 @@ CATEGORIES = [
     ("benefits", "Allowances & tax refunds", "income", 0, 0),
     ("side_income", "Side business income", "income", 0, 0),
     ("other_income", "Other income", "income", 0, 0),
+    ("contribution", "Partner's deposit into the joint account", "income", 0, 0),  # from an account not in Kasboek
     ("housing", "Mortgage / rent", "expense", 1, 0),
     ("energy", "Energy & water", "expense", 1, 0),
     ("insurance", "Insurance", "expense", 1, 0),
@@ -178,7 +179,7 @@ CATEGORIES = [
     ("pets", "Pets", "expense", 0, 0),
     ("animals", "Animals", "expense", 0, 0),
     ("business", "Side business costs", "expense", 0, 0),
-    ("cash", "Cash withdrawal", "expense", 0, 0),
+    ("cash", "Cash withdrawal (into the wallet)", "transfer", 0, 0),  # spending is what you log from the wallet
     ("fees", "Bank fees & interest", "expense", 0, 0),
     ("other", "Other spending", "expense", 0, 0),
     ("transfer", "Between own accounts", "transfer", 0, 0),
@@ -216,6 +217,7 @@ MIGRATIONS = [
     ("recurring", "anchor_day", "INTEGER"),                 # day of month payments land on
     ("recurring", "kind", "TEXT"),                          # income | expense | transfer (category kind)
     ("recurring", "on_checking", "INTEGER NOT NULL DEFAULT 1"),  # paid from/to a checking account
+    ("transactions", "personal_for", "TEXT NOT NULL DEFAULT ''"),  # only for this person (fair share)
 ]
 
 
@@ -238,6 +240,9 @@ def init():
                 "INSERT OR IGNORE INTO categories(key,label,kind,essential,everyday) VALUES (?,?,?,?,?)",
                 (key, label, kind, ess, every),
             )
+        # Cash became a move into the wallet (2026-11-19): what you buy with it is logged by hand.
+        con.execute("UPDATE categories SET kind='transfer', label=? WHERE key='cash' AND kind != 'transfer'",
+                    (dict((k, l) for k, l, *_ in CATEGORIES)["cash"],))
 
 
 def setting(con, key, default=None):

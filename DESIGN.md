@@ -54,6 +54,8 @@ dot, never a thick side stripe.
   selected month marked with an accent band; each month is a link to that month.
 - **Line** (`_balance_chart.html`): 2px accent line, dashed `--neg` low-balance limit, lowest point labelled with a card-
   coloured halo, hover readout, "Show as a table".
+- **Fair share** (`share.html`): split bar of who paid (person 1 `--s1`, person 2 `--s2`, 2px gap, ink tick at the
+  fair split, legend with percentages), a comparison table with hints under each label, pill radio groups (`.pick`).
 - **Icons**: one hand-drawn SVG set in `_icons.html`, 24px grid, 1.8 stroke, round joins. No emoji or unicode glyphs.
 
 ## Layout

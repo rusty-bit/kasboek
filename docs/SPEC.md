@@ -179,6 +179,20 @@ Tags add the cross-cutting view: any number per booking, answering "for whom / f
 
 ---
 
+### 6.9 Fair share (built 2026-11-19, `app/fairshare.py`)
+Does each person carry their part of the household costs? Two people (names in settings), split **half each** or
+**in proportion to income** (monthly net income per person, entered on the page).
+- Paid by a person: expense rows on accounts they own, their cash wallet, and payments logged by hand
+  ("Paid elsewhere": an account or card that isn't in Kasboek). Joint-account spending is paid in the ratio of
+  each person's deposits into the joint account in the period (evenly when nobody deposited).
+- Deposits: transfers from a person's own account, or money from an IBAN listed for them (their accounts outside
+  Kasboek). Money from such an IBAN gets category `contribution` (income kind: household money coming in), source
+  `household`. The page suggests unknown IBANs that paid into the joint account more than once.
+- Any expense booking can be marked "only for <person>" (`transactions.personal_for`): carried fully by them,
+  not a shared cost. Savings accounts, transfers, income, side-business costs and other owners never count.
+- Cash: an ATM withdrawal (`cash`, now transfer kind) moves money into the owner's wallet; what is bought with it
+  is logged by hand. The wallet shows withdrawn / logged / left, counted from the day fair share was set up.
+
 ## 7. Pages
 
 1. **Overview:** free to spend + per day, 90-day balance line, next 10 bills, pots progress, budget bars, alerts.
@@ -187,6 +201,7 @@ Tags add the cross-cutting view: any number per booking, answering "for whom / f
 4. **Goals:** pots (add move, edit), habits, budgets.
 5. **Forecast:** 12-month table, sinking funds, seasonal hints.
 6. **Banks & import:** upload CSV/CAMT, Enable Banking connect + paste-URL fallback, accounts (name, kind, owner, included), last sync, consent expiry.
+6b. **Fair share:** who carried what (period switch), log a cash/elsewhere payment, partner-deposit suggestions, cash wallets, logged payments, people and account owners.
 7. **Settings:** rules, categories, payday, low-balance threshold, LLM endpoint, ntfy topic.
 8. `GET /api/summary`: `{free_to_spend, per_day, lowest_balance_90d, lowest_date, alerts[], pots[]}` for a Home Assistant REST sensor.
 

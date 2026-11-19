@@ -17,6 +17,15 @@
       · <button class="link" hx-post="/transactions/{{ t.id }}/confirm" hx-target="#tx-{{ t.id }}" hx-swap="outerHTML">looks right</button>
       {% endif %}
     </div>
+    {% if people_names and t.category_kind == 'expense' %}
+    <form class="catform small for-form" hx-post="/transactions/{{ t.id }}/personal" hx-target="#tx-{{ t.id }}" hx-swap="outerHTML"
+          hx-trigger="change" method="post" action="/transactions/{{ t.id }}/personal">
+      <select name="person" aria-label="Shared cost or only for one person">
+        <option value="">Shared cost</option>
+        {% for n in people_names %}<option value="{{ n }}" {{ 'selected' if t.personal_for == n }}>Only for {{ n }}</option>{% endfor %}
+      </select>
+    </form>
+    {% endif %}
     {% if note %}<div class="small ok-text">✓ {{ note }}</div>{% endif %}
     {% if offer %}
     <form class="catform small" hx-post="/transactions/{{ t.id }}/rule" hx-target="#tx-{{ t.id }}" hx-swap="outerHTML"

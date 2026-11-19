@@ -257,3 +257,33 @@ main { overflow-wrap: anywhere; }
   .balance-chart .axis { font-size: 22px; } .balance-chart .lbl { font-size: 24px; stroke-width: 7px; }
   .bars .axis { font-size: 20px; }
 }
+
+/* fair share */
+.person-set { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 12px; margin: 0; display: grid; gap: 10px; min-width: 0; }
+.person-set legend { padding: 0 6px; font-weight: 600; font-size: .875rem; }
+.form-grid label.radio, .form-grid .radio { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: .875rem; }
+.owner-row { display: flex !important; align-items: center; justify-content: space-between; gap: 10px; color: var(--ink) !important; font-size: .875rem !important; }
+.owner-row > span { min-width: 0; overflow-wrap: anywhere; }
+.pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pick > span { width: 100%; }
+.pick label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--raised);
+  border: 1px solid var(--line); color: var(--ink); cursor: pointer; font-size: .875rem; }
+.pick label:has(input:checked) { border-color: var(--accent); color: var(--accent); }
+.pick input { margin: 0; }
+.share-bar { position: relative; display: flex; gap: 2px; height: 14px; margin: 4px 0 8px; }
+.share-bar i { display: block; height: 100%; min-width: 2px; }
+.share-bar i:first-child { border-radius: 4px 0 0 4px; } .share-bar i:last-child { border-radius: 0 4px 4px 0; }
+.share-bar i.p1, .dot.p1 { background: var(--s1); } .share-bar i.p2, .dot.p2 { background: var(--s2); }
+.share-bar .target { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+.share-keys { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 10px; }
+.share-keys span { display: inline-flex; align-items: center; gap: 6px; }
+.share-keys .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.share-table td:first-child { min-width: 0; }
+.share-table tr.sum td { font-weight: 650; }
+.sug { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.chip-btn { padding: 5px 12px; border-radius: 999px; font-size: .8125rem; }
+.for-form select { padding: 3px 8px; font-size: .8125rem; margin-top: 4px; }
+.review-line strong svg { vertical-align: -3px; color: var(--pos); }
+.share-table .hint { display: block; font-size: .75rem; color: var(--muted); }
+.share-table td.num { white-space: nowrap; }
+@media (max-width: 520px) { .share-table td, .share-table th { padding: 8px 4px; } .share-table td:first-child { font-size: .875rem; } }

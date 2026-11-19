@@ -350,7 +350,7 @@ def wallet_pairs(bank_rows, wallet_rows, name, days=WALLET_DAYS):
     return out
 
 
-def categorize(t, own_ibans, rules, memory, llm=None, chain_index=None, wallet_paid=None):
+def categorize(t, own_ibans, rules, memory, llm=None, chain_index=None, wallet_paid=None, household_ibans=None):
     """-> (category_key, source). First hit wins:
     transfer > rule > memory (same name) > iban (same counterparty IBAN) > chain (other branch of a taught
     shop) > keyword > mcc (bank's shop type) > llm (stored AI guess) > default.
@@ -359,6 +359,8 @@ def categorize(t, own_ibans, rules, memory, llm=None, chain_index=None, wallet_p
         return "transfer", "transfer"
     if wallet_paid and t.get("id") in wallet_paid:
         return "transfer", "transfer"
+    if household_ibans and (t.get("counterparty_iban") or "").upper() in household_ibans:
+        return "contribution", "household"   # money from or back to a partner's account that isn't in Kasboek
     for r in sorted(rules, key=lambda r: r.id, reverse=True):   # newest rule first
         if rule_matches(r, t):
             return r.category, "rule"
@@ -386,14 +388,15 @@ def categorize(t, own_ibans, rules, memory, llm=None, chain_index=None, wallet_p
     return ("other_income" if t["amount"] > 0 else "other"), "default"
 
 
-def categorize_all(rows, own_ibans, rules, memory, llm=None, wallet_paid=None):
+def categorize_all(rows, own_ibans, rules, memory, llm=None, wallet_paid=None, household_ibans=None):
     """-> {id: (category, source)} for every non-manual row whose result differs from what it has now."""
     out = {}
     idx = chains(memory)
     for t in rows:
         if t.get("cat_source") == "manual":
             continue
-        res = categorize(t, own_ibans, rules, memory, llm=llm, chain_index=idx, wallet_paid=wallet_paid)
+        res = categorize(t, own_ibans, rules, memory, llm=llm, chain_index=idx, wallet_paid=wallet_paid,
+                         household_ibans=household_ibans)
         if res != (t.get("category"), t.get("cat_source")):
             out[t["id"]] = res
     return out

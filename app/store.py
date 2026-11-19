@@ -1,6 +1,9 @@
 """DB writes and reads for accounts and imported transactions. Parsing stays in importers.py (pure)."""
+import json
 import logging
+import re
 import sqlite3
+import uuid
 from collections import OrderedDict
 from datetime import date
 
@@ -16,8 +19,9 @@ from app.transfers import infer_ibans
 log = logging.getLogger("kasboek.store")
 
 BANK_LABELS = {"rabobank": "Rabobank", "knab": "Knab", "comdirect": "comdirect", "ing": "ING",
-               "abn amro": "ABN AMRO", "asn": "ASN", "sns": "SNS", "bunq": "bunq", "triodos": "Triodos"}
-KINDS = ("checking", "savings", "credit")
+               "abn amro": "ABN AMRO", "asn": "ASN", "sns": "SNS", "bunq": "bunq", "triodos": "Triodos",
+               "manual": "Logged by hand"}
+KINDS = ("checking", "savings", "credit", "cash", "elsewhere")
 
 
 class NeedsAccount(ValueError):
@@ -177,8 +181,8 @@ def update_account(con, account_id, name, kind, owner, included, iban=None):
 # --- categorisation (DB glue around app/categorize.py) --------------------------------------------
 TX_COLS = ("SELECT t.id, t.date, t.amount, t.counterparty, t.description, t.counterparty_iban, t.account_id,"
            " t.cat_source, t.mcc, t.source, c.key AS category_key, c.label AS category_label, c.key AS category,"
-           " c.kind AS category_kind,"
-           " a.name AS account_name, a.owner"
+           " c.kind AS category_kind, t.personal_for,"
+           " a.name AS account_name, a.owner, a.kind AS account_kind"
            " FROM transactions t JOIN accounts a ON a.id = t.account_id"
            " LEFT JOIN categories c ON c.id = t.category_id")
 QUEUE_SOURCES = ("default", "llm")
@@ -203,7 +207,8 @@ def _context(con):
         if not (r["norm"].startswith("iban:") and r["norm"][5:] in shared)}
     llm = {(r["norm"], r["direction"]): r["key"] for r in con.execute(
         "SELECT g.norm, g.direction, c.key FROM llm_guesses g JOIN categories c ON c.id = g.category_id")}
-    return dict(own_ibans=own, rules=rules_, memory=memory, llm=llm, wallet_paid=set(wallet_links(con)))
+    return dict(own_ibans=own, rules=rules_, memory=memory, llm=llm, wallet_paid=set(wallet_links(con)),
+                household_ibans=set(household_ibans(con)) - own)
 
 
 def wallet_links(con):
@@ -736,3 +741,201 @@ def dashboard(con, period_key="", today=None):
         "history": an.balance_history(accs, rows, today, months=24),
         "first_date": min((r["date"][:10] for r in rows), default=None),
     }
+
+
+# --- fair share: who carries the household spending ----------------------------------------------
+JOINT = "shared"
+METHODS = {"cash": "Cash", "elsewhere": "Paid elsewhere"}   # account kind -> name prefix of the wallet account
+
+
+def people(con):
+    """The household's people: [{name, ibans (their accounts that aren't in Kasboek), income (monthly, or None)}]."""
+    try:
+        raw = json.loads(dbm.setting(con, "people", "[]") or "[]")
+    except ValueError:
+        raw = []
+    return [{"name": p.get("name", ""), "ibans": list(p.get("ibans") or []), "income": p.get("income")} for p in raw]
+
+
+def people_names(con):
+    return [p["name"] for p in people(con)]
+
+
+def share_mode(con):
+    return "income" if dbm.setting(con, "share_mode", "equal") == "income" else "equal"
+
+
+def _ibans(text):
+    if isinstance(text, (list, tuple)):
+        text = " ".join(text)
+    return sorted({norm_iban(x) for x in (text or "").replace(",", " ").split() if norm_iban(x)})
+
+
+def _income(v):
+    from app.search import to_number
+    if v in (None, ""):
+        return None
+    try:
+        n = v if isinstance(v, (int, float)) else to_number(str(v).replace("€", "").replace(" ", "").strip())
+    except ValueError:
+        raise ValueError("Write the income as a number, for example 3.200,00.") from None
+    return round(abs(n), 2) if n else None
+
+
+def save_people(con, new, mode, owners=None):
+    """new: [{name, ibans (text or list), income}], one per person. owners: {account id: owner}. Renaming a
+    person moves their accounts, wallets and 'only for' marks along."""
+    names = [(p.get("name") or "").strip() for p in new]
+    lower = [n.lower() for n in names]
+    if not all(names) or len(set(lower)) != len(names) or JOINT in lower:
+        raise ValueError("Give each person a different name.")
+    old = people_names(con)
+    for before, after in zip(old, names):
+        if before and before != after:
+            con.execute("UPDATE accounts SET name=replace(name, ?, ?) WHERE bank='manual' AND owner=?",
+                        (f"· {before}", f"· {after}", before))
+            con.execute("UPDATE accounts SET owner=? WHERE owner=?", (after, before))
+            con.execute("UPDATE transactions SET personal_for=? WHERE personal_for=?", (after, before))
+    data = [{"name": n, "ibans": _ibans(p.get("ibans")), "income": _income(p.get("income"))} for n, p in zip(names, new)]
+    dbm.set_setting(con, "people", json.dumps(data))
+    if not dbm.setting(con, "share_since"):
+        dbm.set_setting(con, "share_since", date.today().isoformat())   # cash wallets count from here
+    dbm.set_setting(con, "share_mode", "income" if mode == "income" else "equal")
+    for acc_id, owner in (owners or {}).items():
+        if owner in names or owner == JOINT:
+            con.execute("UPDATE accounts SET owner=? WHERE id=?", (owner, int(acc_id)))
+    recategorize(con)   # a partner's IBAN turns their deposits into their share
+
+
+def household_ibans(con):
+    """{IBAN: person} for the people's own accounts that aren't in Kasboek."""
+    return {i: p["name"] for p in people(con) for i in p["ibans"]}
+
+
+def iban_owner(con):
+    """{IBAN: person} for every account a person pays from: theirs in Kasboek, and the ones outside it."""
+    names = set(people_names(con))
+    out = {r["iban"]: r["owner"] for r in con.execute("SELECT iban, owner FROM accounts WHERE iban IS NOT NULL")
+           if r["owner"] in names}
+    out.update(household_ibans(con))
+    return out
+
+
+def assign_iban(con, iban, person):
+    ps = people(con)
+    match = next((p for p in ps if p["name"] == person), None)
+    if not match:
+        raise ValueError("Pick one of the people.")
+    match["ibans"] = _ibans(match["ibans"] + [iban])
+    dbm.set_setting(con, "people", json.dumps(ps))
+    recategorize(con)
+
+
+def _wallet(con, owner, method):
+    row = con.execute("SELECT id FROM accounts WHERE bank='manual' AND kind=? AND owner=?", (method, owner)).fetchone()
+    if row:
+        return row["id"]
+    label = "household" if owner == JOINT else owner
+    cur = con.execute("INSERT INTO accounts(name, bank, kind, owner, source) VALUES (?,?,?,?,?)",
+                      (f"{METHODS[method]} · {label}", "manual", method, owner, "manual"))
+    return cur.lastrowid
+
+
+def add_manual(con, when, amount, what, category, payer, method, personal):
+    """Log a payment that no bank shows: cash, or paid from an account that isn't in Kasboek."""
+    try:
+        date.fromisoformat(str(when))
+    except ValueError:
+        raise ValueError("Pick the date of the payment.") from None
+    try:
+        amount = round(abs(float(amount)), 2)
+    except (TypeError, ValueError):
+        amount = 0
+    if not amount:
+        raise ValueError("Fill in the amount.")
+    if payer not in people_names(con) and payer != JOINT:
+        raise ValueError("Pick who paid.")
+    if method not in METHODS:
+        raise ValueError("Pick how it was paid.")
+    if payer == JOINT and method != "cash":
+        raise ValueError("From the joint account only cash can be logged: card payments come in from the bank.")
+    cat = con.execute("SELECT id, kind FROM categories WHERE key=?", (category,)).fetchone()
+    if not cat or cat["kind"] != "expense":
+        raise ValueError("Pick a spending category.")
+    acc = _wallet(con, payer, method)
+    cur = con.execute(
+        "INSERT INTO transactions(account_id, date, amount, counterparty, description, category_id, cat_source,"
+        " dedupe_key, source, personal_for) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (acc, str(when), -amount, (what or "").strip()[:120] or "Cash payment", "", cat["id"], "manual",
+         f"manual:{uuid.uuid4().hex}", "manual", payer if (personal and payer != JOINT) else ""))
+    log.info("Logged a payment by hand (%s)", METHODS[method])
+    return cur.lastrowid
+
+
+def manual_entries(con, limit=50):
+    return [dict(r) for r in con.execute(TX_COLS + " WHERE t.source='manual' ORDER BY t.date DESC, t.id DESC LIMIT ?",
+                                         (limit,))]
+
+
+def delete_manual(con, tx_id):
+    row = con.execute("SELECT source FROM transactions WHERE id=?", (tx_id,)).fetchone()
+    if not row or row["source"] != "manual":
+        raise ValueError("Only payments logged by hand can be deleted.")
+    con.execute("DELETE FROM transactions WHERE id=?", (tx_id,))
+
+
+def set_personal(con, tx_id, person):
+    person = (person or "").strip()
+    if person and person not in people_names(con):
+        raise ValueError("Pick one of the people.")
+    con.execute("UPDATE transactions SET personal_for=? WHERE id=?", (person, tx_id))
+
+
+def share_rows(con):
+    return [dict(r) for r in con.execute(
+        "SELECT t.date, t.amount, t.counterparty_iban, t.personal_for, a.owner, a.kind AS account_kind,"
+        " c.key AS category_key, c.kind AS category_kind FROM transactions t JOIN accounts a ON a.id = t.account_id"
+        " LEFT JOIN categories c ON c.id = t.category_id WHERE a.included = 1 AND t.ignored = 0")]
+
+
+def share_period(period_key, today):
+    from app import analytics as an
+    if period_key == "all":
+        return {"key": "all", "kind": "all", "start": date(2000, 1, 1), "end": today, "label": "All time"}
+    return an.period(period_key or str(today.year), today)
+
+
+def fair_share(con, period_key="", today=None):
+    from app import fairshare as fs
+    today = today or date.today()
+    ps = people(con)
+    names = [x["name"] for x in ps]
+    p = share_period(period_key, today)
+    rows = share_rows(con)
+    r = fs.balance(rows, names, p["start"], p["end"], iban_owner=iban_owner(con), mode=share_mode(con),
+                   incomes={x["name"]: x["income"] for x in ps})
+    r["period"] = p
+    r["wallets"] = fs.wallets(rows, names, since=dbm.setting(con, "share_since"))
+    r["since"] = dbm.setting(con, "share_since")
+    return r
+
+
+def joint_deposit_suggestions(con, today=None, days=365):
+    """Money coming into a joint account more than once from an account nobody is linked to yet: most likely
+    a partner's deposits. Largest first."""
+    today = today or date.today()
+    known = set(iban_owner(con)) | {r["iban"] for r in con.execute("SELECT iban FROM accounts WHERE iban IS NOT NULL")}
+    rows = con.execute(
+        "SELECT t.counterparty_iban AS iban, MAX(t.counterparty) AS name, COUNT(*) AS n,"
+        " ROUND(SUM(t.amount), 2) AS total, MAX(t.date) AS last"
+        " FROM transactions t JOIN accounts a ON a.id = t.account_id LEFT JOIN categories c ON c.id = t.category_id"
+        " WHERE a.owner = ? AND a.kind = 'checking' AND t.amount > 0 AND t.counterparty_iban != ''"
+        " AND COALESCE(c.kind, 'income') != 'expense'"
+        " AND COALESCE(c.key, '') NOT IN ('salary', 'child_benefit', 'benefits')"
+        " AND t.date >= date(?, ?) GROUP BY t.counterparty_iban HAVING COUNT(*) >= 2 ORDER BY total DESC LIMIT 8",
+        (JOINT, today.isoformat(), f"-{days} days")).fetchall()
+    return [{"iban": r["iban"], "name": r["name"], "count": r["n"], "total": r["total"], "last": r["last"]}
+            for r in rows if r["iban"] not in known and not COMPANY.search(r["name"] or "")][:5]
+
+
+COMPANY = re.compile(r"\b(stichting|b\.?v\.?|n\.?v\.?|gmbh|payments?|bank|belastingdienst|verzekering\w*|ltd|inc)\b", re.I)

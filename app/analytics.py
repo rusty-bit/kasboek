@@ -20,7 +20,7 @@ GROUPS = [
     ("home", "Home & garden", ("home",)),
     ("leisure", "Leisure & travel", ("holidays", "hobbies", "subscriptions", "gifts")),
     ("shopping", "Shopping", ("shopping", "clothing")),
-    ("other", "Other", ("business", "cash", "fees", "other")),
+    ("other", "Other", ("business", "fees", "other")),
 ]
 GROUP_OF = {cat: key for key, _, cats in GROUPS for cat in cats}
 GROUP_LABEL = {key: label for key, label, _ in GROUPS}
