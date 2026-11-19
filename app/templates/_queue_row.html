@@ -1,0 +1,43 @@
+{% from "_macros.html" import category_select, rule_offer %}
+{% if saved %}
+{% set t = saved.t %}
+<tr id="g-{{ saved.row_id }}">
+  <td><div>{{ (t.counterparty or t.description)[:60] }}</div>
+    <div class="small muted">{{ 'money in' if t.amount > 0 else 'money out' }} · {{ t.account_name }}</div></td>
+  <td colspan="3">
+    {% if saved.rule_hits is not none %}
+    <div class="ok-text">✓ Rule saved: it matches {{ saved.rule_hits }} {{ 'transaction' if saved.rule_hits == 1 else 'transactions' }}.
+      <a href="/rules" class="small">See all rules</a></div>
+    {% else %}
+    <div class="ok-text">✓ Saved as <strong>{{ t.category_label }}</strong>{% if saved.changed %},
+      and {{ saved.changed }} other {{ 'row' if saved.changed == 1 else 'rows' }} from this shop{% endif %}.</div>
+    {% if saved.error %}<div class="small bad">{{ saved.error }}</div>{% endif %}
+    <form class="catform small" method="post" action="/queue/rule"
+          hx-post="/queue/rule" hx-target="#g-{{ saved.row_id }}" hx-swap="outerHTML">
+      <input type="hidden" name="tx_id" value="{{ t.id }}">
+      <input type="hidden" name="row_id" value="{{ saved.row_id }}">
+      {{ rule_offer(saved.offer, t.category_key, t.category_label) }}
+    </form>
+    {% endif %}
+  </td>
+</tr>
+{% for gid in gone %}<tr id="g-{{ gid }}" hx-swap-oob="delete"></tr>
+{% endfor %}
+<template>{% set oob = True %}{% include "_queue_count.html" %}</template>
+{% else %}
+<tr id="g-{{ g.tx_id }}" class="{{ 'unsure' if g.cat_source == 'default' }}">
+  <td><div>{{ g.name[:60] }}</div>
+    <div class="small muted">{{ 'money in' if g.direction == 'in' else 'money out' }} · {{ g.first_date }}{% if g.first_date != g.last_date %} to {{ g.last_date }}{% endif %} · {{ g.account_name }}</div></td>
+  <td class="num">{{ g.count }} {{ 'row' if g.count == 1 else 'rows' }}</td>
+  <td class="num {{ 'neg' if g.total < 0 }}">{{ g.total|eur }}</td>
+  <td>
+    <form method="post" action="/queue/assign" class="catform"
+          hx-post="/queue/assign" hx-target="#g-{{ g.tx_id }}" hx-swap="outerHTML">
+      <input type="hidden" name="tx_id" value="{{ g.tx_id }}">
+      {{ category_select(categories, g.category_key) }}
+      <button type="submit">{{ 'Yes, save' if g.cat_source == 'llm' else 'Save' }}</button>
+      {% if g.cat_source == 'llm' %}<span class="src src-llm small">AI guess</span>{% endif %}
+    </form>
+  </td>
+</tr>
+{% endif %}

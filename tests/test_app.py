@@ -150,7 +150,7 @@ def test_queue_page_groups_and_assigns(client):
 def test_nav_shows_queue_count(client):
     upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-30,00;Jan Pietersen\n",
            account=str(_new_account(client)))
-    assert "Is this right? (1)" in client.get("/").text
+    assert 'id="queue-count"> (1)</span>' in client.get("/").text
 
 
 def _new_account(client):
@@ -205,3 +205,46 @@ def test_transactions_totals_leave_out_investments(client):
                                 b"03-10-2026;-20,00;Albert Heijn 1234\n", account=str(acc))
     r = client.get("/transactions", params={"month": "2026-10"})
     assert "Investments" in r.text and "out <strong class=\"neg\">€ -20,00</strong>" in r.text
+
+
+# --- queue in place (HTMX): no jump to the top, the rule offer shows under the row you just saved --------
+HX = {"HX-Request": "true"}
+
+
+def test_queue_assign_with_htmx_returns_the_row_with_rule_offer(client):
+    acc = _new_account(client)
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-8,00;Kiosk Zuid 4411\n"
+                                b"03-10-2026;-9,00;Jan Pietersen\n", account=str(acc))
+    tid = first_tx("Kiosk")
+    assert f'id="g-{tid}"' in client.get("/queue").text
+    r = client.post("/queue/assign", data={"tx_id": str(tid), "category": "groceries"}, headers=HX)
+    assert r.status_code == 200 and "<html" not in r.text
+    assert f'id="g-{tid}"' in r.text and "Saved as" in r.text and "Groceries" in r.text
+    assert 'name="match_text" value="kiosk zuid"' in r.text and 'hx-post="/queue/rule"' in r.text
+    assert 'id="queue-count"' in r.text and "(1)" in r.text          # nav count updated out of band
+    r = client.post("/queue/rule", data={"tx_id": str(tid), "match_text": "kiosk", "category": "groceries"},
+                    headers=HX)
+    assert f'id="g-{tid}"' in r.text and "Rule saved: it matches 1 transaction" in r.text
+
+
+def test_queue_rule_with_htmx_removes_groups_it_cleared(client):
+    acc = _new_account(client)
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-8,00;Kiosk Zuid\n"
+                                b"03-10-2026;-9,00;Kiosk Noord\n", account=str(acc))
+    zuid, noord = first_tx("Kiosk Zuid"), first_tx("Kiosk Noord")
+    client.post("/queue/assign", data={"tx_id": str(zuid), "category": "groceries"}, headers=HX)
+    r = client.post("/queue/rule", data={"tx_id": str(zuid), "match_text": "kiosk", "category": "groceries"},
+                    headers=HX)
+    assert f'id="g-{noord}" hx-swap-oob="delete"' in r.text
+
+
+def test_transactions_save_refreshes_other_rows_from_the_same_shop(client):
+    acc = _new_account(client)
+    upload(client, "x.csv", data=b"Datum;Bedrag;Naam\n02-10-2026;-8,00;Zaak Q\n09-10-2026;-9,00;Zaak Q\n"
+                                b"10-10-2026;-7,00;Zaak Qwerty\n", account=str(acc))
+    with db.db() as con:
+        a, b, c = [r["id"] for r in con.execute("SELECT id FROM transactions ORDER BY date")]
+    r = client.post(f"/transactions/{a}/category", data={"category": "hobbies"}, headers=HX)
+    assert f'id="tx-{b}" hx-swap-oob="true"' in r.text and f'id="tx-{c}"' not in r.text
+    r = client.post(f"/transactions/{a}/rule", data={"match_text": "zaak q", "category": "hobbies"}, headers=HX)
+    assert f'id="tx-{c}" hx-swap-oob="true"' in r.text

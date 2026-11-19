@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -199,8 +199,27 @@ def transactions_page(request: Request, month: str = "", account: str = "", owne
             "total_in": total_in, "total_out": total_out}, con=con)
 
 
-def _tx_row(request, con, tx_id, **ctx):
-    return render(request, "_tx_row.html", {"t": store.transaction(con, tx_id), **ctx}, con=con)
+OOB_ROWS = 300   # most other rows refreshed in place after a save; the rest update on the next page load
+
+
+def _cat_snapshot(con):
+    return {r[0]: (r[1], r[2]) for r in con.execute("SELECT id, category_id, cat_source FROM transactions")}
+
+
+def _tx_row(request, con, tx_id, before=None, **ctx):
+    """The changed row, plus out-of-band copies of other rows whose category changed with it (same shop,
+    or caught by a new rule). htmx swaps those that are on the page and ignores the rest."""
+    resp = render(request, "_tx_row.html", {"t": store.transaction(con, tx_id), **ctx}, con=con)
+    if before is None:
+        return resp
+    after = _cat_snapshot(con)
+    others = [i for i, v in after.items() if i != tx_id and before.get(i) != v][:OOB_ROWS]
+    if not others:
+        return resp
+    tpl, cats = templates.get_template("_tx_row.html"), store.categories(con)
+    extra = "".join("<template>" + tpl.render({"t": store.transaction(con, i), "categories": cats, "oob": True})
+                    + "</template>" for i in others)
+    return HTMLResponse(resp.body.decode() + extra)
 
 
 def _saved_note(changed):
@@ -212,18 +231,20 @@ def _saved_note(changed):
 @app.post("/transactions/{tx_id}/category")
 def tx_set_category(request: Request, tx_id: int, category: str = Form(...)):
     with db.db() as con:
+        before = _cat_snapshot(con)
         changed = store.set_category(con, tx_id, category)
-        return _tx_row(request, con, tx_id, note=_saved_note(changed), offer=store.suggest_rule(con, tx_id))
+        return _tx_row(request, con, tx_id, before, note=_saved_note(changed), offer=store.suggest_rule(con, tx_id))
 
 
 @app.post("/transactions/{tx_id}/rule")
 def tx_make_rule(request: Request, tx_id: int, match_text: str = Form(""), category: str = Form(...)):
     with db.db() as con:
+        before = _cat_snapshot(con)
         try:
             _, hits = store.rule_from_tx(con, tx_id, match_text, category)
         except ValueError as e:
             return _tx_row(request, con, tx_id, note=str(e))
-        return _tx_row(request, con, tx_id, note=f"Rule saved: it matches {hits} "
+        return _tx_row(request, con, tx_id, before, note=f"Rule saved: it matches {hits} "
                                                  f"{'transaction' if hits == 1 else 'transactions'}.")
 
 
@@ -295,17 +316,47 @@ def settings_llm(request: Request, llm_base_url: str = Form(""), llm_model: str 
     return RedirectResponse("/queue", status_code=303)
 
 
+def _is_htmx(request):
+    return request.headers.get("HX-Request") == "true"
+
+
+def _queue_ids(con):
+    return {g["tx_id"] for g in store.queue_groups(con)[:QUEUE_PAGE]}
+
+
+def _saved_row(request, con, before, row_id, tx_id, **saved):
+    """The queue row after saving, rendered in place, plus deletes for groups the save cleared too."""
+    gone = sorted(before - _queue_ids(con) - {row_id})
+    saved.setdefault("rule_hits", None)
+    return render(request, "_queue_row.html", {
+        "saved": {"t": store.transaction(con, tx_id), "row_id": row_id, **saved}, "gone": gone}, con=con)
+
+
 @app.post("/queue/assign")
-def queue_assign(tx_id: int = Form(...), category: str = Form(...)):
+def queue_assign(request: Request, tx_id: int = Form(...), category: str = Form(...)):
     with db.db() as con:
+        before = _queue_ids(con) if _is_htmx(request) else set()
         changed = store.set_category(con, tx_id, category)
+        if _is_htmx(request):
+            return _saved_row(request, con, before, tx_id, tx_id, changed=changed,
+                              offer=store.suggest_rule(con, tx_id))
     return RedirectResponse(f"/queue?saved={tx_id}&n={changed}", status_code=303)
 
 
 @app.post("/queue/rule")
-def queue_rule(tx_id: int = Form(...), match_text: str = Form(""), category: str = Form(...)):
+def queue_rule(request: Request, tx_id: int = Form(...), match_text: str = Form(""), category: str = Form(...),
+               row_id: int = Form(0)):
     with db.db() as con:
-        _, hits = store.rule_from_tx(con, tx_id, match_text, category)
+        before = _queue_ids(con) if _is_htmx(request) else set()
+        try:
+            _, hits = store.rule_from_tx(con, tx_id, match_text, category)
+        except ValueError as e:
+            if not _is_htmx(request):
+                raise
+            return _saved_row(request, con, before, row_id or tx_id, tx_id, error=str(e),
+                              offer=match_text)
+        if _is_htmx(request):
+            return _saved_row(request, con, before, row_id or tx_id, tx_id, rule_hits=hits)
     return RedirectResponse(f"/queue?rule_hits={hits}", status_code=303)
 
 

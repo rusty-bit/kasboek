@@ -1,5 +1,5 @@
 {% from "_macros.html" import category_select, rule_offer %}
-<tr id="tx-{{ t.id }}" class="{{ 'unsure' if t.cat_source in ('default', 'llm') }}">
+<tr id="tx-{{ t.id }}"{{ ' hx-swap-oob="true"'|safe if oob }} class="{{ 'unsure' if t.cat_source in ('default', 'llm') }}">
   <td class="nowrap">{{ t.date }}</td>
   <td>
     <div>{{ t.counterparty or t.description[:60] }}</div>
