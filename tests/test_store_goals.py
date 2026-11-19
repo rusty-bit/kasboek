@@ -176,3 +176,21 @@ def test_forecast_page_shows_last_years_big_month(client):
         store.set_category(c, tx, "gifts")
     page = client.get("/forecast").text
     assert "Last year at this time" in page and "€ 640,00 on gifts" in page
+
+
+def test_pots_linked_to_a_savings_account_are_checked_against_its_balance(con):
+    sav = store.create_account(con, "Spaarrekening", "knab", kind="savings")
+    con.execute("UPDATE accounts SET balance=1000, balance_date='2026-11-19' WHERE id=?", (sav,))
+    h = store.add_pot(con, "Holiday", target="1200", account_id=sav)
+    c = store.add_pot(con, "Car", target="5000", account_id=str(sav))
+    store.add_pot(con, "Loose", target="100")
+    store.add_pot_move(con, h, "600", when="2026-11-01")
+    store.add_pot_move(con, c, "300", when="2026-11-01")
+    g = store.goals_page(con, TODAY)
+    assert {p["name"]: p["account_name"] for p in g["pots"]}["Holiday"] == "Spaarrekening"
+    acc = g["linked"][0]
+    assert (acc["name"], acc["balance"], acc["in_pots"], acc["unassigned"]) == ("Spaarrekening", 1000.0, 900.0, 100.0)
+    store.add_pot_move(con, c, "200", when="2026-11-02")
+    assert store.goals_page(con, TODAY)["linked"][0]["unassigned"] == -100.0     # pots say more than the bank has
+    with pytest.raises(ValueError):
+        store.add_pot(con, "Nowhere", target="10", account_id="999")

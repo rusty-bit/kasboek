@@ -1053,25 +1053,31 @@ def _month(raw):
     return raw
 
 
-def _pot_fields(name, target, target_date, monthly_plan, priority, auto):
+def _pot_fields(con, name, target, target_date, monthly_plan, priority, auto, account_id):
     name = re.sub(r"\s+", " ", name or "").strip()
     if not name:
         raise ValueError("Give the pot a name, for example Holiday.")
+    acc = int(account_id) if str(account_id or "").strip().isdigit() and int(account_id) else None
+    if acc is not None and not con.execute("SELECT 1 FROM accounts WHERE id=?", (acc,)).fetchone():
+        raise ValueError("That account doesn't exist.")
     return (name[:40], _euro(target, "the target"), _month(target_date),
             _euro(monthly_plan or 0, "the monthly plan", allow_zero=True),
-            int(priority) if str(priority) in ("1", "2", "3") else 2, 1 if auto else 0)
+            int(priority) if str(priority) in ("1", "2", "3") else 2, 1 if auto else 0, acc)
 
 
-def add_pot(con, name, target, target_date="", monthly_plan="", priority=2, auto=False):
-    """A savings goal. auto: filled by a standing order that Recurring already counts."""
-    cur = con.execute("INSERT INTO pots(name, target, target_date, monthly_plan, priority, auto) VALUES (?,?,?,?,?,?)",
-                      _pot_fields(name, target, target_date, monthly_plan, priority, auto))
+def add_pot(con, name, target, target_date="", monthly_plan="", priority=2, auto=False, account_id=None):
+    """A savings goal. auto: filled by a standing order that Recurring already counts. account_id: the
+    (savings) account the money sits on; the Goals page then checks the pots against its balance."""
+    cur = con.execute("INSERT INTO pots(name, target, target_date, monthly_plan, priority, auto, account_id)"
+                      " VALUES (?,?,?,?,?,?,?)",
+                      _pot_fields(con, name, target, target_date, monthly_plan, priority, auto, account_id))
     return cur.lastrowid
 
 
-def update_pot(con, pid, name, target, target_date="", monthly_plan="", priority=2, auto=False):
-    con.execute("UPDATE pots SET name=?, target=?, target_date=?, monthly_plan=?, priority=?, auto=? WHERE id=?",
-                (*_pot_fields(name, target, target_date, monthly_plan, priority, auto), pid))
+def update_pot(con, pid, name, target, target_date="", monthly_plan="", priority=2, auto=False, account_id=None):
+    con.execute("UPDATE pots SET name=?, target=?, target_date=?, monthly_plan=?, priority=?, auto=?, account_id=?"
+                " WHERE id=?", (*_pot_fields(con, name, target, target_date, monthly_plan, priority, auto,
+                                             account_id), pid))
 
 
 def archive_pot(con, pid):
@@ -1096,7 +1102,8 @@ def _pots(con, today):
     from app import goals
     month = today.strftime("%Y-%m")
     out = []
-    for p in con.execute("SELECT * FROM pots WHERE archived=0 ORDER BY priority, COALESCE(target_date, '9999'), id"):
+    for p in con.execute("SELECT p.*, a.name AS account_name FROM pots p LEFT JOIN accounts a ON a.id = p.account_id"
+                         " WHERE p.archived=0 ORDER BY p.priority, COALESCE(p.target_date, '9999'), p.id"):
         p = dict(p)
         saved, moved = con.execute(
             "SELECT COALESCE(SUM(amount), 0), COALESCE(SUM(CASE WHEN substr(date,1,7)=? THEN amount END), 0)"
@@ -1275,4 +1282,20 @@ def goals_page(con, today=None):
         surplus = round(sum(m["income"] + m["fixed"] + m["variable"] for m in months) / len(months), 2)
     due, _ = _pot_plans(con, today)
     return {"today": today, "pots": pots, "feasibility": goals.feasibility(pots, surplus), "pots_due": due,
-            "habits": _habits(con, today, rows), "budgets": budgets(con, today, rows)}
+            "habits": _habits(con, today, rows), "budgets": budgets(con, today, rows),
+            "linked": _linked_accounts(con, pots),
+            "accounts": [dict(r) for r in con.execute("SELECT id, name, kind FROM accounts ORDER BY kind != 'savings', name")]}
+
+
+def _linked_accounts(con, pots):
+    """Accounts that pots sit on: balance, what the pots hold, and what is on the account but in no pot
+    (negative: the pots say more than the bank has)."""
+    out = []
+    for aid in sorted({p["account_id"] for p in pots if p["account_id"]}):
+        a = con.execute("SELECT name, balance, balance_date FROM accounts WHERE id=?", (aid,)).fetchone()
+        in_pots = round(sum(p["status"]["saved"] for p in pots if p["account_id"] == aid), 2)
+        bal = a["balance"]
+        out.append({"id": aid, "name": a["name"], "balance": bal, "balance_date": a["balance_date"], "in_pots": in_pots,
+                    "pots": [p["name"] for p in pots if p["account_id"] == aid],
+                    "unassigned": None if bal is None else round(bal - in_pots, 2)})
+    return out

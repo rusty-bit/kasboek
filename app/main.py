@@ -854,16 +854,16 @@ def goals_page(request: Request):
 
 @app.post("/goals/pots")
 def pot_add(request: Request, name: str = Form(""), target: str = Form(""), target_date: str = Form(""),
-            monthly_plan: str = Form(""), priority: str = Form("2"), auto: str = Form("")):
+            monthly_plan: str = Form(""), priority: str = Form("2"), auto: str = Form(""), account_id: str = Form("")):
     return _goals_do(request, lambda con: store.add_pot(con, name, target, target_date, monthly_plan, priority,
-                                                        bool(auto)), "pots")
+                                                        bool(auto), account_id), "pots")
 
 
 @app.post("/goals/pots/{pid}")
 def pot_edit(request: Request, pid: int, name: str = Form(""), target: str = Form(""), target_date: str = Form(""),
-             monthly_plan: str = Form(""), priority: str = Form("2"), auto: str = Form("")):
+             monthly_plan: str = Form(""), priority: str = Form("2"), auto: str = Form(""), account_id: str = Form("")):
     return _goals_do(request, lambda con: store.update_pot(con, pid, name, target, target_date, monthly_plan,
-                                                           priority, bool(auto)), f"pot-{pid}")
+                                                           priority, bool(auto), account_id), f"pot-{pid}")
 
 
 @app.post("/goals/pots/{pid}/move")

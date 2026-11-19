@@ -158,7 +158,7 @@ per_day = free ÷ days left (today counts)
 - **Feasibility:** total pot plans vs typical monthly surplus (income − fixed − typical variable, averaged over the
   12-month outlook). If they don't fit, say so and order the pots by priority and date. Without a full month of
   day-to-day spending the page says it can't tell yet.
-- v2: link a pot to a real savings account (Knab spaarrekening etc.) so the pots on that account always add up to its balance.
+- Link a pot to the account its money sits on (built 2026-11-19, `pots.account_id`): the Goals page compares the pots on an account with its balance and shows what is in no pot, or warns when the pots hold more than the bank.
 
 ### 6.6 Habits ("reduce spending on X")
 - Habit = category and/or name match + monthly target + optional pot.
@@ -237,7 +237,7 @@ Does each person carry their part of the household costs? Two people (names in s
 | M5b | (on hold) Tags (§6.8): per-booking tags, bulk tagging, rule/memory tags, tag filters and analyses | "What did the kids cost this year" works across categories without double-counting totals |
 | M6 | Enable Banking connector + scheduler + consent alert | All three banks sync for a week unattended |
 | M7 | HA sensor, ntfy, backups, deploy on the NAS via Portainer (built 2026-11-19; reboot test open) | Runs on the NAS from absolute `/volume1/Docker/kasboek` paths and survives a reboot |
-| v2 | (seasonal hints done) Savings-account-linked pots, weekly check-in, FinTS fallback | — |
+| v2 | (seasonal hints and account-linked pots done) Weekly check-in, FinTS fallback | — |
 | v3 | Local-LLM chat over your data | — |
 
 ---

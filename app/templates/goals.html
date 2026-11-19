@@ -29,6 +29,20 @@
   </section>
   {% endif %}
 
+  {% for a in g.linked %}
+  <section class="card" aria-label="Pots on {{ a.name }}">
+    {% if a.unassigned is none %}
+    <p class="muted" style="margin:0">{{ a.name }}: no balance known yet, so Kasboek can't check the pots on it ({{ a.pots|join(', ') }}).</p>
+    {% elif a.unassigned < 0 %}
+    <div class="notice">The pots on <strong>{{ a.name }}</strong> ({{ a.pots|join(', ') }}) hold {{ a.in_pots|eur }}, but the account has
+      {{ a.balance|eur }}: {{ a.unassigned|abs|eur }} more in pots than in the bank. Book a move out of a pot, or check the balance date ({{ a.balance_date }}).</div>
+    {% else %}
+    <div class="ok"><strong>{{ a.name }}</strong> has {{ a.balance|eur }}: {{ a.in_pots|eur }} in pots ({{ a.pots|join(', ') }}){% if a.unassigned %},
+      {{ a.unassigned|eur }} not in a pot yet{% endif %}.</div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
   {% for p in g.pots %}{% set s = p.status %}
   <section class="card w4" id="pot-{{ p.id }}" aria-labelledby="pot-h-{{ p.id }}">
     <div class="tile-title"><span class="ic">{{ icon('wallet') }}</span><span id="pot-h-{{ p.id }}">{{ p.name }}</span>
@@ -38,7 +52,7 @@
     <div class="sub">
       {% if s.done %}{{ icon('check', 14) }} Full.
       {% else %}
-        {% if p.monthly_plan %}Plan {{ p.monthly_plan|eur }} a month{% if p.auto %} (standing order){% endif %}{% else %}No monthly plan{% endif %}
+        {% if p.account_name %}On {{ p.account_name }} · {% endif %}{% if p.monthly_plan %}Plan {{ p.monthly_plan|eur }} a month{% if p.auto %} (standing order){% endif %}{% else %}No monthly plan{% endif %}
         {% if s.needed_per_month is not none %} · needs {{ s.needed_per_month|eur }} a month to reach it by {{ month_name(p.target_date ~ '-01') }}{% endif %}
       {% endif %}
     </div>
@@ -71,6 +85,7 @@
           <label>Monthly plan €<input name="monthly_plan" value="{{ p.monthly_plan|plain }}"></label>
           <label>Priority<select name="priority">{% for v, l in [(1, 'high'), (2, 'normal'), (3, 'nice to have')] %}<option value="{{ v }}" {{ 'selected' if p.priority == v }}>{{ l }}</option>{% endfor %}</select></label>
         </div>
+        <label>Money sits on (optional)<select name="account_id"><option value="">no particular account</option>{% for a in g.accounts %}<option value="{{ a.id }}" {{ 'selected' if p.account_id == a.id }}>{{ a.name }}</option>{% endfor %}</select></label>
         <label class="radio"><input type="checkbox" name="auto" value="1" {{ 'checked' if p.auto }}> Filled by a standing order (already in Recurring)</label>
         <div><button type="submit">Save</button></div>
       </form>
@@ -92,6 +107,7 @@
           <label>Monthly plan €<input name="monthly_plan" placeholder="200"></label>
           <label>Priority<select name="priority"><option value="1">high</option><option value="2" selected>normal</option><option value="3">nice to have</option></select></label>
         </div>
+        <label>Money sits on (optional)<select name="account_id"><option value="">no particular account</option>{% for a in g.accounts %}<option value="{{ a.id }}" {{ 'selected' if False }}>{{ a.name }}</option>{% endfor %}</select></label>
         <label class="radio"><input type="checkbox" name="auto" value="1"> Filled by a standing order (already in Recurring)</label>
         <div><button type="submit">Add pot</button></div>
       </form>
