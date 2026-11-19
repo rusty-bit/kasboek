@@ -4,6 +4,7 @@
 services:
   kasboek:
     image: kasboek:0.2.0
+    pull_policy: never          # built locally on the NAS; never look for it on Docker Hub
     container_name: kasboek
     restart: unless-stopped
     environment:
