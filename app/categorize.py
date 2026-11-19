@@ -318,12 +318,24 @@ def mcc_category(mcc, d):
 
 
 # --- pipeline -------------------------------------------------------------------------------------
-def categorize(t, own_ibans, rules, memory, llm=None, chain_index=None):
+WALLETS = ("paypal",)   # payment accounts the bank shows by name, not by IBAN
+
+
+def _to_own_wallet(t, own_wallets):
+    """A bank payment to a wallet you have connected (PayPal): money moved to your own account. The
+    purchase itself is a row in the wallet account."""
+    cp = norm_text(t.get("counterparty") or "")
+    return any(cp.startswith(name) and t.get("account_id") != acc for name, acc in (own_wallets or {}).items())
+
+
+def categorize(t, own_ibans, rules, memory, llm=None, chain_index=None, own_wallets=None):
     """-> (category_key, source). First hit wins:
     transfer > rule > memory (same name) > iban (same counterparty IBAN) > chain (other branch of a taught
     shop) > keyword > mcc (bank's shop type) > llm (stored AI guess) > default.
     memory: {(normalized merchant or 'iban:<IBAN>', direction): category}; llm: same shape, AI guesses."""
     if (t.get("counterparty_iban") or "").upper() in own_ibans and t.get("counterparty_iban"):
+        return "transfer", "transfer"
+    if own_wallets and _to_own_wallet(t, own_wallets):
         return "transfer", "transfer"
     for r in sorted(rules, key=lambda r: r.id, reverse=True):   # newest rule first
         if rule_matches(r, t):
@@ -352,14 +364,14 @@ def categorize(t, own_ibans, rules, memory, llm=None, chain_index=None):
     return ("other_income" if t["amount"] > 0 else "other"), "default"
 
 
-def categorize_all(rows, own_ibans, rules, memory, llm=None):
+def categorize_all(rows, own_ibans, rules, memory, llm=None, own_wallets=None):
     """-> {id: (category, source)} for every non-manual row whose result differs from what it has now."""
     out = {}
     idx = chains(memory)
     for t in rows:
         if t.get("cat_source") == "manual":
             continue
-        res = categorize(t, own_ibans, rules, memory, llm=llm, chain_index=idx)
+        res = categorize(t, own_ibans, rules, memory, llm=llm, chain_index=idx, own_wallets=own_wallets)
         if res != (t.get("category"), t.get("cat_source")):
             out[t["id"]] = res
     return out

@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date
 
 from app.categorize import (Rule, categorize_all, direction, memory_keys, merchant_text, norm_text,
-                            normalize_merchant, rule_matches, shared_ibans, suggest_rule_text)
+                            normalize_merchant, rule_matches, shared_ibans, suggest_rule_text, WALLETS)
 from app import db as dbm
 from app import forecast as fc
 from app import recurring as rc
@@ -203,7 +203,12 @@ def _context(con):
         if not (r["norm"].startswith("iban:") and r["norm"][5:] in shared)}
     llm = {(r["norm"], r["direction"]): r["key"] for r in con.execute(
         "SELECT g.norm, g.direction, c.key FROM llm_guesses g JOIN categories c ON c.id = g.category_id")}
-    return dict(own_ibans=own, rules=rules_, memory=memory, llm=llm)
+    wallets = {}
+    for r in con.execute("SELECT id, bank FROM accounts"):
+        name = (r["bank"] or "").lower()
+        if name in WALLETS:
+            wallets.setdefault(name, r["id"])
+    return dict(own_ibans=own, rules=rules_, memory=memory, llm=llm, own_wallets=wallets)
 
 
 def recategorize(con):

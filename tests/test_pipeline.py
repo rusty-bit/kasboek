@@ -228,3 +228,14 @@ def test_payment_provider_iban_shared_by_shops_is_not_learned(con):
     tid = con.execute("SELECT id FROM transactions WHERE counterparty='Agradi b.v.'").fetchone()["id"]
     store.set_category(con, tid, "animals")
     assert cat_of(con, "Verfwebwinkel")[0] != "animals"
+
+
+def test_connecting_paypal_turns_bank_payments_to_paypal_into_transfers(con):
+    acc = store.create_account(con, name="Test", bank="")
+    csv = ("Datum;Bedrag;Naam;Omschrijving\n"
+           "18-03-2026;-2895,54;PayPal Europe S.a.r.l. et Cie S.C.A;1048964254564 uw aankoop bij ......\n").encode()
+    imp(con, "s.csv", data=csv, account_id=acc)
+    assert cat_of(con, "PayPal")[1] != "transfer"
+    store.create_account(con, name="PayPal", bank="paypal")
+    store.recategorize(con)
+    assert cat_of(con, "PayPal") == ("transfer", "transfer")

@@ -241,3 +241,15 @@ def test_shared_ibans_are_payment_providers():
     rows += [{"counterparty": n, "description": "", "counterparty_iban": "NL00KNAB0000000077", "amount": -1}
              for n in ("D. E. Vos", "Dee Vos", "DEE VOS", "D", "DE Vos")]      # one person, many spellings
     assert shared_ibans(rows) == {"NL00RABO0000000099"}
+
+
+def test_payments_to_a_connected_wallet_are_transfers():
+    from app.categorize import categorize
+    bank_row = {"id": 1, "account_id": 3, "amount": -2895.54, "counterparty": "PayPal Europe S.a.r.l. et Cie S.C.A",
+                "counterparty_iban": "", "description": "1048964254564 uw aankoop bij ..........", "mcc": None}
+    assert categorize(bank_row, set(), [], {}, own_wallets={"paypal": 9}) == ("transfer", "transfer")
+    assert categorize(bank_row, set(), [], {})[1] != "transfer"                    # no PayPal account: spending
+    in_wallet = {**bank_row, "account_id": 9, "counterparty": "PayPal", "description": "Purchase"}
+    assert categorize(in_wallet, set(), [], {}, own_wallets={"paypal": 9})[1] != "transfer"
+    shop_via = {**bank_row, "counterparty": "Bol.com", "description": "betaald via paypal"}
+    assert categorize(shop_via, set(), [], {}, own_wallets={"paypal": 9})[1] != "transfer"
