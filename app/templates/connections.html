@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Home Assistant & alerts · Kasboek{% endblock %}
+{% block content %}
+<h1>Home Assistant &amp; alerts</h1>
+{% if error %}<div class="error card" role="alert">{{ error }}</div>{% endif %}
+{% if saved == 'ntfy' %}<div class="ok card" role="status">Saved.{{ ' Alerts go to your phone from now on.' if ntfy_url else ' Alerts are no longer sent.' }}</div>{% endif %}
+{% if saved == 'test' %}<div class="ok card" role="status">Test message sent. Check your phone.</div>{% endif %}
+{% if saved == 'revoked' %}<div class="ok card" role="status">Token removed. Home Assistant can't read Kasboek any more.</div>{% endif %}
+
+<div class="card">
+  <h2>Alerts on your phone (ntfy)</h2>
+  <p class="muted">Kasboek sends each new alert once: a price going up, a contract deadline, a low balance ahead, a budget
+    you went over, a bank permission running out. It checks every hour and after each bank sync. Install the ntfy app,
+    run an ntfy server in your home (for example as a container on the NAS) and subscribe to a topic.
+    Kasboek only sends to an address on your own network, so the texts with your amounts stay at home.</p>
+  <form method="post" action="/settings/connections/ntfy" class="filters">
+    <input name="ntfy_url" value="{{ ntfy_typed if ntfy_typed is defined else ntfy_url }}" size="42"
+           placeholder="http://192.168.178.22:8090/kasboek" aria-label="ntfy topic address">
+    <button type="submit">Save</button>
+  </form>
+  {% if ntfy_url %}
+  <form method="post" action="/settings/connections/ntfy/test" style="margin-top:10px">
+    <button type="submit" class="link">Send a test message</button></form>
+  {% endif %}
+  {% if ntfy_error %}<p class="small warn">The last attempt failed: {{ ntfy_error }}. Kasboek tries again next hour.</p>{% endif %}
+  <p class="small muted">Leave the address empty to stop alerts.</p>
+</div>
+
+<div class="card">
+  <h2>Home Assistant</h2>
+  <p class="muted">Home Assistant can show free to spend, the lowest balance ahead, your pots and the alerts. It reads
+    <code>{{ base }}/api/summary</code> with a token. The token only opens that address, not the rest of Kasboek.</p>
+  {% if token %}
+  <div class="notice">Your token, shown only now. Copy it into Home Assistant:
+    <p><code data-token="{{ token }}" style="word-break:break-all">{{ token }}</code></p></div>
+  {% endif %}
+  <div class="filters">
+    <form method="post" action="/settings/connections/token">
+      <button type="submit">{{ 'Make a new token' if has_token else 'Make a token' }}</button></form>
+    {% if has_token %}
+    <form method="post" action="/settings/connections/token/revoke"><button type="submit" class="link">Remove the token</button></form>
+    {% endif %}
+  </div>
+  {% if has_token and not token %}<p class="small muted">A token exists. Making a new one stops the old one.</p>{% endif %}
+  <p class="small muted" style="margin-bottom:4px">In Home Assistant's <code>configuration.yaml</code>:</p>
+  <pre class="code">rest:
+  - resource: {{ base }}/api/summary
+    headers:
+      Authorization: "Bearer {{ token if token else '&lt;your token&gt;'|safe }}"
+    scan_interval: 900
+    sensor:
+{%- raw %}
+      - name: "Kasboek free to spend"
+        value_template: "{{ value_json.free_to_spend }}"
+        unit_of_measurement: "€"
+      - name: "Kasboek per day"
+        value_template: "{{ value_json.per_day }}"
+        unit_of_measurement: "€"
+      - name: "Kasboek lowest balance 90 days"
+        value_template: "{{ value_json.lowest_balance_90d }}"
+        unit_of_measurement: "€"
+        json_attributes:
+          - lowest_date
+      - name: "Kasboek alerts"
+        value_template: "{{ value_json.alerts | count }}"
+        json_attributes:
+          - alerts
+          - pots{% endraw %}</pre>
+</div>
+{% endblock %}

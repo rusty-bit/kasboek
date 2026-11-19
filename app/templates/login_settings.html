@@ -31,6 +31,7 @@
       <input name="confirm" type="password" autocomplete="new-password" {{ 'required' if must_change }}></label>
     <button type="submit" class="wide">{{ 'Save and continue' if must_change else 'Save' }}</button>
   </form>
+  {% if not must_change %}<p class="sign-in-foot"><a href="/settings/connections">Home Assistant &amp; alerts on your phone</a></p>{% endif %}
   <form method="post" action="/logout" class="sign-in-foot"><button type="submit" class="link">Sign out</button></form>
 </div>
 {% endblock %}

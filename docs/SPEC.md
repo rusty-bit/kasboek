@@ -219,7 +219,8 @@ Does each person carry their part of the household costs? Two people (names in s
 6. **Banks & import:** upload CSV/CAMT, Enable Banking connect + paste-URL fallback, accounts (name, kind, owner, included), last sync, consent expiry.
 6b. **Fair share:** who carried what (period switch), log a cash/elsewhere payment, partner-deposit suggestions, cash wallets, logged payments, people and account owners.
 7. **Settings:** rules, categories, payday, low-balance threshold, LLM endpoint, ntfy topic.
-8. `GET /api/summary`: `{free_to_spend, per_day, lowest_balance_90d, lowest_date, alerts[], pots[]}` for a Home Assistant REST sensor.
+8. `GET /api/summary`: `{free_to_spend, per_day, days_left, balance, lowest_balance_90d, lowest_date, spent_this_month, queue, alerts[], pots[]}` for a Home Assistant REST sensor (built 2026-11-19). With the login on it needs `Authorization: Bearer <token>`; the token (made on Home Assistant & alerts, only its SHA-256 kept) opens `/api/*` only.
+9. **Alerts via ntfy** (built 2026-11-19, `app/notify.py`): a topic URL on your own network only (same rule as the LLM). New alerts are pushed once, hourly and after each sync; again only after they went away and came back or got more urgent (fingerprint kind:key:level). A send error is shown on the page and retried next hour.
 
 ---
 
@@ -235,7 +236,7 @@ Does each person carry their part of the household costs? Two people (names in s
 | M5 | Pots, habits, budgets (done 2026-11-19) + your own categories | Habit month-end suggestion books a pot move |
 | M5b | (on hold) Tags (§6.8): per-booking tags, bulk tagging, rule/memory tags, tag filters and analyses | "What did the kids cost this year" works across categories without double-counting totals |
 | M6 | Enable Banking connector + scheduler + consent alert | All three banks sync for a week unattended |
-| M7 | HA sensor, ntfy, backups, deploy on the NAS via Portainer | Runs on the NAS from absolute `/volume1/Docker/kasboek` paths and survives a reboot |
+| M7 | HA sensor, ntfy, backups, deploy on the NAS via Portainer (built 2026-11-19; reboot test open) | Runs on the NAS from absolute `/volume1/Docker/kasboek` paths and survives a reboot |
 | v2 | Seasonal hints, savings-account-linked pots, weekly check-in, FinTS fallback | — |
 | v3 | Local-LLM chat over your data | — |
 

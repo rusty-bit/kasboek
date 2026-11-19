@@ -10,13 +10,14 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+import httpx
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app import analytics, backup, charts, search
 from app import recurring as rc
-from app import auth, db, enablebanking, llm, store
+from app import auth, db, enablebanking, llm, notify, store
 from app.fmt import eur
 from app.importers import parse_statement
 
@@ -66,6 +67,10 @@ async def _backup_loop():
             await asyncio.to_thread(backup.run)
         except Exception:
             log.exception("Backup failed")
+        try:
+            await asyncio.to_thread(_push_job)
+        except Exception:
+            log.exception("Sending alerts failed")
         await asyncio.sleep(3600)
 
 
@@ -92,6 +97,15 @@ def _sync_job():
         rep = store.sync_all(con, eb_client())
         store.refresh_recurring(con)
     log.info("Background sync: %s new transactions", sum(r["added"] for r in rep))
+    _push_job()
+
+
+def _push_job():
+    """New alerts to ntfy (hourly and after each sync); does nothing until an ntfy address is set."""
+    with db.db() as con:
+        if db.setting(con, "ntfy_url", ""):
+            with httpx.Client() as client:
+                notify.push(con, client)
 
 
 app = FastAPI(title="Kasboek", lifespan=lifespan)
@@ -117,6 +131,13 @@ async def household_login(request: Request, call_next):
     KASBOEK_AUTH=off switches it off for local development. Use it behind HTTPS (Nginx Proxy Manager)."""
     path = request.url.path
     if not auth.enabled() or path in OPEN_PATHS or path.startswith("/static/"):
+        return await call_next(request)
+    if path.startswith("/api/"):       # Home Assistant: a token from Settings -> Home Assistant & alerts
+        with db.db() as con:
+            ok = notify.valid_token(con, request.headers.get("authorization", ""))
+        if not ok:
+            return JSONResponse({"error": "Send 'Authorization: Bearer <token>'. Make a token in Kasboek under "
+                                          "Home Assistant & alerts."}, status_code=401)
         return await call_next(request)
     with db.db() as con:
         st = auth.state(con)
@@ -735,6 +756,77 @@ def _num(s):
         return float(s) if s else None
     except ValueError:
         raise ValueError(f"'{s}' is not an amount.") from None
+
+
+# --- Home Assistant API and alerts (M7) ------------------------------------------------------------
+@app.get("/api/summary")
+def api_summary():
+    """For a Home Assistant REST sensor (SPEC 7.8). Amounts in euro; money out is negative only in balances."""
+    with db.db() as con:
+        f = store.forecast(con)
+        today = f["today"]
+        alerts = store.all_alerts(con, today, f)
+        spent = analytics.spending(store.analytics_rows(con), today.replace(day=1), today)["total"]
+        return {
+            "free_to_spend": f["free"]["free"], "per_day": f["free"]["per_day"], "days_left": f["free"]["days_left"],
+            "balance": f["balance"]["total"], "lowest_balance_90d": f["projection"]["lowest"],
+            "lowest_date": f["projection"]["lowest_date"].isoformat(), "spent_this_month": spent,
+            "queue": store.queue_count(con), "alerts": [a["text"] for a in alerts],
+            "pots": [{"name": p["name"], "saved": p["status"]["saved"], "target": p["target"],
+                      "progress": round(p["status"]["progress"], 3), "on_track": p["status"]["on_track"]}
+                     for p in store.goal_pots(con, today)],
+        }
+
+
+def _connections_page(request, con, status=200, **ctx):
+    host = request.headers.get("host", "<NAS address>:8420")
+    return render(request, "connections.html", {
+        "page": "connections", "has_token": notify.has_token(con), "ntfy_url": db.setting(con, "ntfy_url", ""),
+        "ntfy_error": db.setting(con, "ntfy_error", ""), "base": f"{request.url.scheme}://{host}", **ctx}, status, con)
+
+
+@app.get("/settings/connections")
+def connections_page(request: Request, saved: str = ""):
+    with db.db() as con:
+        return _connections_page(request, con, saved=saved)
+
+
+@app.post("/settings/connections/token")
+def connections_token(request: Request):
+    with db.db() as con:
+        token = notify.new_token(con)
+        return _connections_page(request, con, token=token)
+
+
+@app.post("/settings/connections/token/revoke")
+def connections_revoke(request: Request):
+    with db.db() as con:
+        notify.revoke_token(con)
+    return RedirectResponse("/settings/connections?saved=revoked", status_code=303)
+
+
+@app.post("/settings/connections/ntfy")
+def connections_ntfy(request: Request, ntfy_url: str = Form("")):
+    with db.db() as con:
+        try:
+            url = notify.check_url(ntfy_url)
+        except ValueError as e:
+            return _connections_page(request, con, 400, error=str(e), ntfy_typed=ntfy_url)
+        db.set_setting(con, "ntfy_url", url)
+        db.set_setting(con, "ntfy_error", "")
+    return RedirectResponse("/settings/connections?saved=ntfy", status_code=303)
+
+
+@app.post("/settings/connections/ntfy/test")
+def connections_ntfy_test(request: Request):
+    with db.db() as con:
+        url = db.setting(con, "ntfy_url", "")
+        try:
+            with httpx.Client() as client:
+                notify.send_test(client, url)
+        except Exception as e:
+            return _connections_page(request, con, 400, error=f"Couldn't reach ntfy: {type(e).__name__}: {e}"[:300])
+        return _connections_page(request, con, saved="test")
 
 
 # --- goals: pots, habits, budgets (M5) --------------------------------------------------------------

@@ -75,6 +75,15 @@ Backups: one copy of the database per day in `/volume1/Docker/kasboek/data/backu
 
 The app listens on port 8420 and the container is limited to 256 MB.
 
+## Home Assistant and alerts on your phone
+
+Under the person icon → **Home Assistant & alerts**:
+- **Home Assistant:** make a token; the page shows a ready `rest:` sensor block for `configuration.yaml`. The token
+  only opens `/api/summary` (free to spend, per day, lowest balance in 90 days, spending this month, alerts, pots).
+- **Alerts:** enter an [ntfy](https://ntfy.sh) topic on a server in your home network, for example
+  `http://<NAS address>:8090/kasboek`. Each new alert is pushed once (checked hourly and after each bank sync).
+  Cloud addresses are refused on purpose: the alert texts contain your amounts.
+
 ## Releasing
 
 Bump the version in `docker-compose.yml` and `portainer-stack.yml`, commit, then tag:

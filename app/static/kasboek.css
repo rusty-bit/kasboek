@@ -329,3 +329,6 @@ button.wide { width: 100%; padding: 11px 14px; }
   .budget-list .b-note { grid-column: 2 / span 2; }
 }
 .catlist .meter { grid-column: 1 / -1; }
+
+/* copyable config (Home Assistant) */
+pre.code { background: var(--raised); border-radius: 12px; padding: 12px 14px; overflow-x: auto; font-size: .8125rem; line-height: 1.5; margin: 0; }

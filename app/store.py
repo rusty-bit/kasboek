@@ -747,7 +747,7 @@ def all_alerts(con, today=None, fc_ctx=None):
                                f"{p['lowest_date'].isoformat()} (your limit is {eur(low)})."})
     for b in budgets(con, today, with_suggestions=False):
         if b["budget"] and b["status"]["tone"] == "over":
-            out.append({"kind": "budget", "level": "warn", "key": b["key"],
+            out.append({"kind": "budget", "level": "warn", "key": f"{b['key']}:{today.strftime('%Y-%m')}",
                         "text": f"You're over your {b['label']} budget: {eur(b['status']['spent'])} of "
                                 f"{eur(b['budget'])} this month."})
     for s in eb_sessions(con):
