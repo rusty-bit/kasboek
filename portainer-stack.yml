@@ -2,7 +2,7 @@
 # Bind mounts MUST be absolute paths under /volume1/Docker/kasboek: a relative path lands on the 1.8 GB rootfs.
 services:
   kasboek:
-    image: ghcr.io/rusty-bit/kasboek:0.4.0
+    image: ghcr.io/rusty-bit/kasboek:0.4.1
     container_name: kasboek
     restart: unless-stopped
     environment:
