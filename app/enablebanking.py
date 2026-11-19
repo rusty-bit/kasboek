@@ -9,6 +9,7 @@ import glob
 import logging
 import os
 import time
+import uuid
 from datetime import date
 from urllib.parse import parse_qs, urlparse
 
@@ -34,6 +35,45 @@ def load_credentials(data_dir, env=None):
     if len(pems) != 1:
         return (env.get("EB_APP_ID"), pems[0]) if (pems and env.get("EB_APP_ID")) else (None, None)
     return env.get("EB_APP_ID") or os.path.splitext(os.path.basename(pems[0]))[0], pems[0]
+
+
+MAX_KEY_BYTES = 64 * 1024
+
+
+def save_key(data_dir, pem, app_id="", filename=""):
+    """Store an uploaded private key as DATA_DIR/<application id>.pem (owner-only). Other keys are renamed to
+    .pem.old so exactly one is active. -> app_id. Raises ValueError with a message for the user."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    app_id = (app_id or "").strip() or os.path.splitext(os.path.basename(filename or ""))[0]
+    try:
+        app_id = str(uuid.UUID(app_id))
+    except ValueError:
+        raise ValueError("Fill in the application ID. It looks like a1b2c3d4-0000-…, and you find it with your "
+                         "application in the Enable Banking control panel.") from None
+    if not pem or len(pem) > MAX_KEY_BYTES:
+        raise ValueError("This isn't a private key file. Upload the .pem file you got when you created the "
+                         "application in the Enable Banking control panel.")
+    try:
+        key = serialization.load_pem_private_key(pem, password=None)
+    except (ValueError, TypeError):
+        raise ValueError("This isn't a private key file (or it has a password). Upload the .pem file you got when "
+                         "you created the application in the Enable Banking control panel.") from None
+    if not isinstance(key, rsa.RSAPrivateKey):
+        raise ValueError("Enable Banking uses RSA keys, and this is a different kind of key.")
+    os.makedirs(data_dir, exist_ok=True)
+    target = os.path.join(data_dir, f"{app_id}.pem")
+    tmp = target + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(pem)
+    os.replace(tmp, target)
+    for other in glob.glob(os.path.join(data_dir, "*.pem")):
+        if os.path.abspath(other) != os.path.abspath(target):
+            os.replace(other, other + ".old")
+    log.info("Saved the Enable Banking key for application %s…", app_id[:8])
+    return app_id
 
 
 def make_jwt(app_id, private_key_pem, now=None, ttl=JWT_TTL):

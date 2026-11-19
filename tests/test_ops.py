@@ -1,28 +1,8 @@
-"""Running on the NAS: household login and nightly backups."""
-import base64
+"""Running on the NAS: nightly backups. The login is tested in test_login.py."""
 import sqlite3
 from datetime import date
 
 from app import backup, db
-
-
-def auth(user, pw):
-    return {"Authorization": "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()}
-
-
-def test_without_login_configured_everything_is_open(client):
-    assert client.get("/").status_code == 200
-
-
-def test_login_required_when_configured(client, monkeypatch):
-    monkeypatch.setenv("KASBOEK_USER", "huis")
-    monkeypatch.setenv("KASBOEK_PASSWORD", "correct horse")
-    r = client.get("/")
-    assert r.status_code == 401 and r.headers["www-authenticate"].startswith("Basic")
-    assert client.get("/", headers=auth("huis", "wrong")).status_code == 401
-    assert client.get("/", headers=auth("huis", "correct horse")).status_code == 200
-    assert client.get("/health").status_code == 200                 # Docker healthcheck needs no login
-    assert client.get("/eb/callback").status_code == 401
 
 
 def test_backup_makes_a_consistent_copy_and_keeps_14(data_dir):

@@ -7,7 +7,7 @@
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="{{ '#eef0f3' if theme == 'light' else '#111317' }}">
   <title>{% block title %}Kasboek{% endblock %}</title>
-  <link rel="stylesheet" href="/static/kasboek.css?v=6">
+  <link rel="stylesheet" href="/static/kasboek.css?v=7">
   <script src="/static/htmx.min.js"></script>
 </head>
 <body>
@@ -25,6 +25,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 -->
 <header class="top"><nav aria-label="Sections">
   <a class="brand" href="/">{{ icon('logo', 22) }}<span>Kasboek</span></a>
+  {% if not hide_nav %}
   <a href="/" class="tab {{ 'on' if page == 'overview' }}">Overview</a>
   <a href="/transactions" class="tab {{ 'on' if page == 'transactions' }}">Transactions</a>
   <a href="/queue" class="tab {{ 'on' if page == 'queue' }}">Is this right?{% include "_queue_count.html" %}</a>
@@ -35,7 +36,12 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <a href="/banks" class="tab {{ 'on' if page == 'banks' }}">Banks</a>
   <a href="/import" class="tab {{ 'on' if page == 'import' }}">Import</a>
   <a href="/accounts" class="tab {{ 'on' if page == 'accounts' }}">Accounts</a>
+  {% endif %}
   <span class="spacer"></span>
+  {% if not hide_nav %}
+  <a class="icon-btn {{ 'on' if page == 'login-settings' }}" href="/settings/login" aria-label="Login and sign out"
+     title="Login and sign out">{{ icon('user', 18) }}</a>
+  {% endif %}
   <button class="icon-btn" type="button" id="theme-btn" aria-label="Switch to {{ 'dark' if theme == 'light' else 'light' }} theme"
           title="Switch to {{ 'dark' if theme == 'light' else 'light' }} theme">
     <span class="when-dark">{{ icon('sun', 18) }}</span><span class="when-light">{{ icon('moon', 18) }}</span>

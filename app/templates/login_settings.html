@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Login · Kasboek{% endblock %}
+{% block content %}
+<div class="sign-in">
+  <form method="post" action="/settings/login" class="card sign-in-card">
+    {% if must_change %}
+    <h1>Choose your own login</h1>
+    <p class="muted">You signed in with the starting password, which everyone who has Kasboek knows. Pick a username
+      and password for your household before you continue.</p>
+    {% else %}
+    <h1>Login</h1>
+    <p class="muted">One login for the whole household. Changing the password signs out every other device.</p>
+    {% endif %}
+    {% if not auth_on %}<div class="notice">The login is switched off on this server (<code>KASBOEK_AUTH=off</code>).
+      What you set here takes effect once it is on again.</div>{% endif %}
+    {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+    {% if saved %}<div class="ok" role="status">Saved.</div>{% endif %}
+
+    <label class="field">Current password
+      <input name="current" type="password" autocomplete="current-password" required
+             {{ 'autofocus' if must_change or error }}></label>
+    <label class="field">Username
+      <input name="username" value="{{ username or ('' if must_change else user) }}" autocomplete="username"
+             autocapitalize="none" spellcheck="false" required></label>
+    <label class="field">New password
+      <input name="password" type="password" autocomplete="new-password" minlength="{{ min_length }}"
+             {{ 'required' if must_change }}>
+      <span class="small muted">At least {{ min_length }} characters.{% if not must_change %} Leave empty to keep
+        the current one.{% endif %}</span></label>
+    <label class="field">New password again
+      <input name="confirm" type="password" autocomplete="new-password" {{ 'required' if must_change }}></label>
+    <button type="submit" class="wide">{{ 'Save and continue' if must_change else 'Save' }}</button>
+  </form>
+  <form method="post" action="/logout" class="sign-in-foot"><button type="submit" class="link">Sign out</button></form>
+</div>
+{% endblock %}

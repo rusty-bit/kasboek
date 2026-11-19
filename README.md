@@ -8,6 +8,28 @@ Local-first family finance app: bank sync (Rabobank, Knab, comdirect), auto-cate
 - `app/importers.py`: CSV (Rabobank, Knab, ING, comdirect…) and CAMT.053 import, tested
 - `samples/`: synthetic bank files (no real data)
 
+## Get started (Docker)
+
+```
+git clone https://github.com/rusty-bit/kasboek.git
+cd kasboek
+docker compose up -d --build
+```
+
+1. Open `http://<this machine>:8420` and sign in with username `kasboek` and password `kasboek`.
+2. Kasboek asks you to choose your own username and password right away. You can change them later through the
+   person icon at the top right.
+3. **Banks**: create a free application in the [Enable Banking](https://enablebanking.com) control panel and
+   upload its `.pem` key on the Banks page. Or skip this and import CSV / CAMT.053 files on the Import page.
+4. **Accounts**: set each account's kind (checking, savings…) and owner.
+
+Your data (database, bank key, daily backups) lives in the Docker volume `kasboek-data`. To use a folder instead,
+put `KASBOEK_DATA=/absolute/path` in a `.env` file next to `docker-compose.yml`. Other optional settings are in
+`stack.env.example`. Updating: `git pull && docker compose up -d --build`.
+
+Forgot the login? `docker exec kasboek python -m app.auth reset` sets it back to `kasboek` / `kasboek`.
+For use outside your home network, put Kasboek behind a reverse proxy with HTTPS.
+
 ## Run locally (Windows, PowerShell)
 
 ```powershell
@@ -17,6 +39,8 @@ pip install -r requirements.txt
 pytest
 $env:DATA_DIR = "./data"; uvicorn app.main:app --reload
 ```
+
+Sign in with `kasboek` / `kasboek` on a fresh data folder, or set `$env:KASBOEK_AUTH = "off"` to work without a login.
 
 Open http://127.0.0.1:8000.
 
@@ -32,13 +56,14 @@ Uses `./data` next to the repo. **Local only. Never use this file on the NAS.**
 
 Paths are absolute on purpose: a relative bind mount would land on the 1.8 GB rootfs.
 
-1. Copy the code to `kasboek/src` and the data (`kasboek.db` + the Enable Banking `.pem`) to `kasboek/data` on the
+1. Copy the code to `kasboek/src` and the data (`kasboek.db`, plus the Enable Banking `.pem` unless you upload it on
+   the Banks page) to `kasboek/data` on the
    `Docker` share (`/volume1/Docker` on the NAS, the same volume as Docker itself), with the local app **stopped**
    (only one Kasboek may sync with the banks).
 2. Over SSH on the NAS, once:
-   `chown -R 1000:1000 /volume1/Docker/kasboek/data && cd /volume1/Docker/kasboek/src && docker build -t kasboek:0.3.0 .`
-3. Portainer: Stacks → Add stack → Web editor → paste `portainer-stack.yml`; add the environment variables
-   `KASBOEK_USER` and `KASBOEK_PASSWORD` (the household login); deploy.
+   `chown -R 1000:1000 /volume1/Docker/kasboek/data && cd /volume1/Docker/kasboek/src && docker build -t kasboek:0.4.0 .`
+3. Portainer: Stacks → Add stack → Web editor → paste `portainer-stack.yml`; deploy.
+   Sign in with `kasboek` / `kasboek` and choose your own login.
 4. Open `http://<NAS address>:8420`. For HTTPS, add a proxy host in Nginx Proxy Manager to `<NAS address>:8420`.
    Then register `https://<that host>/banks/callback` as redirect URL in the Enable Banking control panel and on
    the Banks page, so bank logins come straight back.

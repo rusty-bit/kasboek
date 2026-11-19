@@ -103,7 +103,7 @@ Feature ideas are taken from Finanzguru, Rocket Money and the open-source **brok
 ```
 
 - **Why Python:** `python-fints` exists, signing Enable Banking JWTs is trivial, and it's easy to keep pure functions under test. One process, no Postgres.
-- **Auth:** the household is the unit. Optional basic auth from env, and/or behind Nginx Proxy Manager. Accounts carry `owner` (shared / person) for filtering "mine / yours / ours".
+- **Auth:** the household is the unit. One login, set in the web interface: a fresh install starts with `kasboek` / `kasboek` (or `KASBOEK_USER` / `KASBOEK_PASSWORD`) and must choose its own after the first sign-in. Salted scrypt hash in `settings`, signed session cookie (30 days, invalid after a password change), 10 wrong tries per address → 15 minutes wait, `python -m app.auth reset` to recover. `KASBOEK_AUTH=off` for local development. Use behind Nginx Proxy Manager for HTTPS. The Enable Banking key is uploaded on the Banks page. Accounts carry `owner` (shared / person) for filtering "mine / yours / ours".
 - **Backups:** nightly `sqlite3 .backup` into `/data/backups`, keep 14. Paperless/Immich backup routine can pick it up.
 
 ---

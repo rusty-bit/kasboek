@@ -31,12 +31,36 @@
 </div>
 {% endfor %}
 
+{% macro key_form(replace=false) %}
+<form method="post" action="/banks/key" enctype="multipart/form-data" class="key-form">
+  {% if key_error %}<div class="error" role="alert">{{ key_error }}</div>{% endif %}
+  <label class="field">Private key file (.pem)
+    <input type="file" name="key" accept=".pem,application/x-pem-file" required></label>
+  <label class="field">Application ID
+    <input name="app_id" value="{{ form_app_id or '' }}" placeholder="a1b2c3d4-0000-4000-…" autocomplete="off"
+           spellcheck="false">
+    <span class="small muted">Leave empty if the file is still called <code>&lt;application-id&gt;.pem</code>.</span></label>
+  <div><button type="submit">{{ 'Replace the key' if replace else 'Save the key' }}</button></div>
+  <p class="small muted" style="margin:0">The key stays on this server, in the data folder, readable only by
+    Kasboek.{% if replace %} The old key is kept next to it as <code>.pem.old</code>.{% endif %}</p>
+</form>
+{% endmacro %}
+
+{% if key_saved %}<div class="ok card">Key saved. Kasboek now talks to Enable Banking with this application.</div>{% endif %}
+
 {% if not app_id %}
 <div class="card">
-  <h2>No Enable Banking key found</h2>
-  <p>Put the <code>&lt;application-id&gt;.pem</code> file you downloaded from the Enable Banking control panel in the
-    data folder (<code>/data</code> on the NAS, <code>kasboek\data\</code> locally). Kasboek reads the application ID
-    from its filename. You can also set <code>EB_APP_ID</code> and <code>EB_KEY_PATH</code>.</p>
+  <h2>Connect Kasboek to Enable Banking</h2>
+  <p>Kasboek reads your bank accounts through Enable Banking (read-only, never payments). You need your own free
+    application there, once:</p>
+  <ol class="steps">
+    <li>Sign up at <a href="https://enablebanking.com" rel="noopener noreferrer" target="_blank">enablebanking.com</a>
+      and open the control panel.</li>
+    <li>Create an application. As redirect URL, enter the address of this Kasboek followed by
+      <code>/banks/callback</code> (it must start with <code>https://</code>).</li>
+    <li>Enable Banking gives you a <code>.pem</code> file: the application's private key. Upload it here.</li>
+  </ol>
+  {{ key_form() }}
 </div>
 {% else %}
 
@@ -109,5 +133,16 @@
     files are recognised (same amount within 2 days), not added twice.</p>
   {% endif %}
 </div>
+
+<details class="card" {{ 'open' if key_error }}>
+  <summary><strong>Enable Banking key</strong> <span class="muted small">application {{ app_id[:8] }}…</span></summary>
+  {% if key_from_env %}
+  <p class="small muted">The key is set on the server with <code>EB_APP_ID</code> and <code>EB_KEY_PATH</code>, so an
+    uploaded key isn't used. Remove those two settings to manage the key here.</p>
+  {% else %}
+  <p class="small muted">Only needed when you made a new application in the Enable Banking control panel.</p>
+  {{ key_form(replace=true) }}
+  {% endif %}
+</details>
 {% endif %}
 {% endblock %}

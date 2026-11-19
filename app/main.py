@@ -1,6 +1,5 @@
 """Kasboek web app: FastAPI + Jinja2 + HTMX. Run locally: DATA_DIR=./data uvicorn app.main:app --reload"""
 import asyncio
-import base64
 import logging
 import os
 import secrets
@@ -17,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 
 from app import analytics, backup, charts, search
 from app import recurring as rc
-from app import db, enablebanking, llm, store
+from app import auth, db, enablebanking, llm, store
 from app.fmt import eur
 from app.importers import parse_statement
 
@@ -47,9 +46,10 @@ async def lifespan(app):
     db.init()
     with db.db() as con:
         store.relearn(con)
+        auth.ensure(con)
     log.info("Database ready at %s", db.db_path())
-    if not os.environ.get("KASBOEK_PASSWORD"):
-        log.warning("No KASBOEK_USER / KASBOEK_PASSWORD set: Kasboek is open to anyone who can reach it")
+    if not auth.enabled():
+        log.warning("KASBOEK_AUTH is off: Kasboek is open to anyone who can reach it")
     tasks = []
     if os.environ.get("KASBOEK_SCHEDULER", "1") != "0":
         tasks = [asyncio.create_task(_sync_loop()), asyncio.create_task(_backup_loop())]
@@ -96,26 +96,34 @@ def _sync_job():
 app = FastAPI(title="Kasboek", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
-OPEN_PATHS = {"/health"}   # Docker's healthcheck
+OPEN_PATHS = {"/health", "/login"}   # Docker's healthcheck and the sign-in page itself
+CHANGE_PATHS = {"/settings/login", "/logout"}
+
+
+def _wants_html(request):
+    return request.method == "GET" and not request.headers.get("hx-request")
+
+
+def _go(request, where):
+    if _wants_html(request):
+        return RedirectResponse(where, status_code=303)
+    return Response("Sign in to Kasboek.", status_code=401, headers={"HX-Redirect": where})
 
 
 @app.middleware("http")
 async def household_login(request: Request, call_next):
-    """One shared household login (SPEC decision 1): HTTP Basic auth from KASBOEK_USER / KASBOEK_PASSWORD.
-    Without a password set (local development) the app is open. Use it behind HTTPS (Nginx Proxy Manager)."""
-    user, pw = os.environ.get("KASBOEK_USER", "kasboek"), os.environ.get("KASBOEK_PASSWORD", "")
-    if pw and request.url.path not in OPEN_PATHS:
-        given = request.headers.get("authorization", "")
-        ok = False
-        if given.lower().startswith("basic "):
-            try:
-                u, _, p = base64.b64decode(given[6:]).decode("utf-8").partition(":")
-                ok = secrets.compare_digest(u.encode(), user.encode()) & secrets.compare_digest(p.encode(), pw.encode())
-            except (ValueError, UnicodeDecodeError):
-                ok = False
-        if not ok:
-            return Response("Log in to Kasboek.", status_code=401,
-                            headers={"WWW-Authenticate": 'Basic realm="Kasboek", charset="UTF-8"'})
+    """One shared household login (SPEC decision 1), set in the web interface (app/auth.py).
+    KASBOEK_AUTH=off switches it off for local development. Use it behind HTTPS (Nginx Proxy Manager)."""
+    path = request.url.path
+    if not auth.enabled() or path in OPEN_PATHS or path.startswith("/static/"):
+        return await call_next(request)
+    with db.db() as con:
+        st = auth.state(con)
+    if not auth.valid_cookie(st, request.cookies.get(auth.COOKIE, "")):
+        here = path + (f"?{request.url.query}" if request.url.query else "")
+        return _go(request, "/login" if here == "/" or not _wants_html(request) else f"/login?next={quote(here)}")
+    if st["must_change"] and path not in CHANGE_PATHS:
+        return _go(request, "/settings/login")
     return await call_next(request)
 
 
@@ -200,6 +208,85 @@ def analysis_delete(aid: int, period: str = Form("")):
     with db.db() as con:
         store.delete_analysis(con, aid)
     return RedirectResponse(f"/?period={period}#analyses" if period else "/#analyses", status_code=303)
+
+
+# --- login ------------------------------------------------------------------------------------------
+def _safe_next(nxt):
+    """Only go back to a page of Kasboek itself, never to another site."""
+    nxt = (nxt or "").strip()
+    return nxt if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt else "/"
+
+
+def _signed_in(response, request, st):
+    https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "") == "https"
+    response.set_cookie(auth.COOKIE, auth.make_cookie(st), max_age=auth.MAX_AGE, httponly=True, samesite="lax",
+                        secure=https, path="/")
+    return response
+
+
+def _login_page(request, status=200, **ctx):
+    with db.db() as con:
+        st = auth.state(con)
+        return render(request, "login.html", {"page": "login", "hide_nav": True, "fresh": auth.is_default(st),
+                                              "default_user": auth.DEFAULT_USER, **ctx}, status, con)
+
+
+@app.get("/login")
+def login_page(request: Request, next: str = ""):
+    if not auth.enabled():
+        return RedirectResponse("/", status_code=303)
+    return _login_page(request, next=_safe_next(next))
+
+
+@app.post("/login")
+def login(request: Request, username: str = Form(""), password: str = Form(""), next: str = Form("")):
+    address = request.client.host if request.client else "?"
+    nxt = _safe_next(next)
+    if auth.blocked(address):
+        return _login_page(request, 429, next=nxt, username=username,
+                           error="Too many wrong passwords. Wait 15 minutes and try again.")
+    with db.db() as con:
+        ok = auth.check(con, username, password)
+        st = auth.state(con)
+    if not ok:
+        auth.failed(address)
+        log.info("Wrong login from %s", address)
+        return _login_page(request, 401, next=nxt, username=username, error="That username or password isn't right.")
+    auth.FAILS.pop(address, None)
+    return _signed_in(RedirectResponse("/settings/login" if st["must_change"] else nxt, status_code=303), request, st)
+
+
+@app.post("/logout")
+def logout():
+    r = RedirectResponse("/login", status_code=303)
+    r.delete_cookie(auth.COOKIE, path="/")
+    return r
+
+
+def _account_page(request, status=200, **ctx):
+    with db.db() as con:
+        st = auth.state(con)
+        return render(request, "login_settings.html", {"page": "login-settings", "user": st["user"], "hide_nav": st["must_change"],
+                                                       "must_change": st["must_change"], "auth_on": auth.enabled(),
+                                                       "min_length": auth.MIN_LENGTH, **ctx}, status, con)
+
+
+@app.get("/settings/login")
+def account_page(request: Request, saved: str = ""):
+    return _account_page(request, saved=saved == "1")
+
+
+@app.post("/settings/login")
+def account_save(request: Request, current: str = Form(""), username: str = Form(""), password: str = Form(""),
+                 confirm: str = Form("")):
+    with db.db() as con:
+        first = auth.state(con)["must_change"]
+        try:
+            auth.change(con, current, username, password, confirm)
+        except ValueError as e:
+            return _account_page(request, 400, error=str(e), username=username)
+        st = auth.state(con)
+    return _signed_in(RedirectResponse("/" if first else "/settings/login?saved=1", status_code=303), request, st)
 
 
 # --- fair share -----------------------------------------------------------------------------------
@@ -724,14 +811,27 @@ def _banks_page(request, status=200, **ctx):
             s["days_left"] = _days_left(s["valid_until"])
         return render(request, "banks.html", {
             "page": "banks", "app_id": app_id, "aspsps": aspsps, "aspsp_error": aspsp_error,
+            "key_from_env": bool(os.environ.get("EB_APP_ID") and os.environ.get("EB_KEY_PATH")),
             "redirect_url": db.setting(con, "eb_redirect_url", ""), "sessions": sessions,
             "linked": [a for a in store.accounts(con) if a["eb_uid"]], "warn_days": CONSENT_WARN_DAYS,
             "sync_hours": SYNC_HOURS, **ctx}, status, con)
 
 
 @app.get("/banks")
-def banks_page(request: Request):
-    return _banks_page(request)
+def banks_page(request: Request, key: str = ""):
+    return _banks_page(request, key_saved=key == "1")
+
+
+@app.post("/banks/key")
+async def banks_key(request: Request, key: UploadFile = File(None), app_id: str = Form("")):
+    """Upload the Enable Banking private key instead of copying it into the data folder by hand."""
+    data = await key.read(enablebanking.MAX_KEY_BYTES + 1) if key else b""
+    try:
+        enablebanking.save_key(db.data_dir(), data, app_id, key.filename if key else "")
+    except ValueError as e:
+        return _banks_page(request, 400, key_error=str(e), form_app_id=app_id)
+    ASPSP_CACHE.clear()
+    return RedirectResponse("/banks?key=1", status_code=303)
 
 
 @app.post("/banks/redirect")

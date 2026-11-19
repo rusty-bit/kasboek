@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Kasboek{% endblock %}
+{% block content %}
+<div class="sign-in">
+  <div class="sign-in-brand">{{ icon('logo', 34) }}<span>Kasboek</span></div>
+  <form method="post" action="/login" class="card sign-in-card">
+    <h1>Sign in</h1>
+    {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+    {% if fresh %}
+    <div class="notice">First time here? Sign in with username <strong>{{ default_user }}</strong> and password
+      <strong>{{ default_user }}</strong>. Kasboek then asks you to choose your own.</div>
+    {% endif %}
+    <input type="hidden" name="next" value="{{ next or '/' }}">
+    <label class="field">Username
+      <input name="username" value="{{ username or '' }}" autocomplete="username" autocapitalize="none"
+             spellcheck="false" required autofocus></label>
+    <label class="field">Password
+      <input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit" class="wide">Sign in</button>
+  </form>
+  <p class="small muted sign-in-foot">Forgot the login? On the server run
+    <code>docker exec kasboek python -m app.auth reset</code>.</p>
+</div>
+{% endblock %}

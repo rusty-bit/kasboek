@@ -30,7 +30,7 @@ class FakeEB(FakeClient):
 def fake(monkeypatch):
     f = FakeEB()
     monkeypatch.setattr(main, "eb_client", lambda: f)
-    monkeypatch.setattr(main, "eb_credentials", lambda: ("2e33-test", "/data/x.pem"))
+    monkeypatch.setattr(main, "eb_credentials", lambda: ("app-test", "/data/x.pem"))
     main.ASPSP_CACHE.clear()
     return f
 
@@ -38,7 +38,7 @@ def fake(monkeypatch):
 def test_banks_page_without_key_explains_setup(client, monkeypatch):
     monkeypatch.setattr(main, "eb_credentials", lambda: (None, None))
     r = client.get("/banks")
-    assert r.status_code == 200 and "No Enable Banking key found" in r.text
+    assert r.status_code == 200 and "Connect Kasboek to Enable Banking" in r.text and 'action="/banks/key"' in r.text
 
 
 def test_redirect_url_must_be_https(client, fake):

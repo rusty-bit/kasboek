@@ -1,21 +1,28 @@
-# Kasboek on the NAS, deployed as a Portainer stack.
-# All bind mounts MUST be absolute paths under /volume1/Docker/kasboek. A relative path lands on the
-# 1.8 GB rootfs and can take the NAS down. Create the folder first:
-#   mkdir -p /volume1/Docker/kasboek/data && chown 1000:1000 /volume1/Docker/kasboek/data
+# Kasboek with Docker Compose, for anyone:
+#   docker compose up -d --build        then open http://<this machine>:8420 and sign in with kasboek / kasboek
+#
+# Data (database, bank key, backups) goes into the Docker volume "kasboek-data" unless you set KASBOEK_DATA
+# to an ABSOLUTE folder, e.g. in a .env file next to this file:  KASBOEK_DATA=/volume1/Docker/kasboek/data
+# (the folder must be writable for uid 1000). Never use a relative path on a NAS: it can land on the small
+# system disk. Optional settings: see stack.env.example.
 services:
   kasboek:
     build: .
-    image: kasboek:0.3.0
+    image: kasboek:0.4.0
     container_name: kasboek
     restart: unless-stopped
-    env_file: stack.env
     environment:
       DATA_DIR: /data
-      TZ: Europe/Amsterdam
+      TZ: ${TZ:-Europe/Amsterdam}
+      KASBOEK_USER: ${KASBOEK_USER:-}              # optional starting login instead of kasboek / kasboek
+      KASBOEK_PASSWORD: ${KASBOEK_PASSWORD:-}
+      EB_REDIRECT_URL: ${EB_REDIRECT_URL:-}        # can also be set on the Banks page
+      LLM_BASE_URL: ${LLM_BASE_URL:-}              # optional local AI, can also be set on the queue page
+      LLM_MODEL: ${LLM_MODEL:-}
     volumes:
-      - /volume1/Docker/kasboek/data:/data
+      - ${KASBOEK_DATA:-kasboek-data}:/data
     ports:
-      - "8420:8000"
+      - "${KASBOEK_PORT:-8420}:8000"
     mem_limit: 256m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
@@ -28,3 +35,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  kasboek-data:

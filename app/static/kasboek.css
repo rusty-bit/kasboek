@@ -287,3 +287,22 @@ main { overflow-wrap: anywhere; }
 .share-table .hint { display: block; font-size: .75rem; color: var(--muted); }
 .share-table td.num { white-space: nowrap; }
 @media (max-width: 520px) { .share-table td, .share-table th { padding: 8px 4px; } .share-table td:first-child { font-size: .875rem; } }
+
+/* sign in and login settings: one narrow column, centred */
+.sign-in { max-width: 400px; margin: 6vh auto 0; }
+.sign-in-brand { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 1.5rem;
+  font-weight: 700; margin-bottom: 18px; }
+.sign-in-brand svg { color: var(--accent); }
+.sign-in-card { display: grid; gap: 14px; padding: 22px; }
+.sign-in-card h1 { margin: 0; }
+.sign-in-card p { margin: 0; }
+.field { display: grid; gap: 6px; font-weight: 600; font-size: .875rem; }
+.field input { font-weight: 400; font-size: 1rem; width: 100%; padding: 10px 12px; }
+.field .small { font-weight: 400; }
+button.wide { width: 100%; padding: 11px 14px; }
+.sign-in-foot { text-align: center; margin-top: 4px; }
+.sign-in-foot code { font-size: .75rem; }
+.icon-btn.on { color: var(--ink); border-color: var(--faint); }
+.key-form { display: grid; gap: 12px; max-width: 520px; }
+.key-form input[type="file"] { padding: 8px; }
+.steps { margin: 0 0 12px; padding-left: 1.3em; display: grid; gap: 6px; }
