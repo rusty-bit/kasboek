@@ -151,6 +151,39 @@ def outlook(today, streams, monthly_variable, months=12, pots=()):
     return out
 
 
+def _shift(ym, n):
+    y, m = divmod(int(ym[:4]) * 12 + int(ym[5:7]) - 1 + n, 12)
+    return f"{y:04d}-{m + 1:02d}"
+
+
+def seasonal_hints(rows, today, months=12, factor=1.5, minimum=100.0):
+    """For each coming month: categories whose spending in that month last year was more than `factor` times
+    their usual month (median of the last 12 full months, quiet months count as 0) and more than `minimum`.
+    "Last December you spent € 640 on gifts." Only from months that have data."""
+    per, first = {}, None
+    for t in rows:
+        if t.get("category_kind") != "expense":
+            continue
+        ym = t["date"][:7]
+        per[(t["category_key"], ym)] = per.get((t["category_key"], ym), 0.0) - t["amount"]
+        first = min(first, ym) if first else ym
+    if not first:
+        return []
+    now = today.strftime("%Y-%m")
+    full = [m for m in (_shift(now, -i) for i in range(1, 13)) if m >= first]
+    out = []
+    for cat in sorted({c for c, _ in per}):
+        usual = median([per.get((cat, m), 0.0) for m in full]) if full else 0.0
+        for i in range(1, months + 1):
+            last_year = _shift(now, i - 12)
+            if last_year < first:
+                continue
+            amount = round(per.get((cat, last_year), 0.0), 2)
+            if amount > minimum and amount > factor * usual:
+                out.append({"month": _shift(now, i), "category": cat, "last_year": amount, "usual": round(usual, 2)})
+    return sorted(out, key=lambda h: (h["month"], -h["last_year"]))
+
+
 def sinking_funds(streams):
     """Per quarterly or yearly bill: what to set aside each month so it's there when the bill comes."""
     items = [{"merchant": s["merchant"], "frequency": s["frequency"], "amount": s["average"],

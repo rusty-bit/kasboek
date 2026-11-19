@@ -118,3 +118,22 @@ def test_outlook_sets_pot_plans_aside_until_each_pot_is_full():
     assert [m["pots"] for m in months] == [-300.0, -300.0, -150.0, -100.0]
     assert months[0]["net"] == -300.0
     assert fc.outlook(TODAY, [], 0.0, months=1)[0]["pots"] == 0.0
+
+
+def _spend(month, amount, cat):
+    return {"date": f"{month}-10", "amount": -amount, "category_key": cat, "category_kind": "expense"}
+
+
+def test_seasonal_hint_when_last_years_month_was_well_above_the_usual():
+    rows = [_spend(f"2025-{m:02d}", 40, "gifts") for m in range(11, 13)]
+    rows += [_spend(f"2026-{m:02d}", 40, "gifts") for m in range(1, 11)]
+    rows[1] = _spend("2025-12", 640, "gifts")                                  # December: presents
+    rows += [_spend(f"2026-{m:02d}", 300, "groceries") for m in range(1, 11)] + [_spend("2025-12", 330, "groceries")]
+    hints = fc.seasonal_hints(rows, TODAY, months=6)
+    assert hints == [{"month": "2026-12", "category": "gifts", "last_year": 640.0, "usual": 40.0}]
+
+
+def test_no_seasonal_hint_below_100_euro_or_without_last_years_month():
+    rows = [_spend(f"2026-{m:02d}", 10, "gifts") for m in range(1, 11)] + [_spend("2025-12", 90, "gifts")]
+    assert fc.seasonal_hints(rows, TODAY) == []
+    assert fc.seasonal_hints([_spend("2026-10", 500, "gifts")], TODAY) == []

@@ -147,7 +147,7 @@ per_day = free ÷ days left (today counts)
 - **90 days, daily:** start from today's checking balance. Add each recurring occurrence on its date, stepping `next_date` by the frequency, keeping the day of month (31st → last day). Subtract the daily variable spend (median monthly variable ÷ 30.4) and the pot transfers on payday. Output the series, the lowest point and its date. Draw it as an SVG line with a threshold line.
 - **12 months, monthly:** expected income, fixed costs (including yearly and quarterly bills in the months they land), typical variable spending, pot plans, and the net result.
 - **Sinking funds:** for each quarterly or yearly bill, monthly reserve = average ÷ (3 or 12). Show the total as "set aside €X/month for irregular bills" (car insurance, road tax, BsGW, ANWB…).
-- **Seasonal hints (v2):** for each coming month, a category whose spend in the same month last year was more than 1.5× its median month and more than €100 → "Last December you spent €640 on gifts".
+- **Seasonal hints (built 2026-11-19, Forecast page "Last year at this time"):** for each coming month, a category whose spend in the same month last year was more than 1.5× its median month and more than €100 → "Last December you spent €640 on gifts".
 
 ### 6.5 Pots (savings goals) (built 2026-11-19, `app/goals.py`, Goals page)
 - Fields: name, target, target month, monthly plan, priority, `auto` (filled by a standing order that Recurring
@@ -237,7 +237,7 @@ Does each person carry their part of the household costs? Two people (names in s
 | M5b | (on hold) Tags (§6.8): per-booking tags, bulk tagging, rule/memory tags, tag filters and analyses | "What did the kids cost this year" works across categories without double-counting totals |
 | M6 | Enable Banking connector + scheduler + consent alert | All three banks sync for a week unattended |
 | M7 | HA sensor, ntfy, backups, deploy on the NAS via Portainer (built 2026-11-19; reboot test open) | Runs on the NAS from absolute `/volume1/Docker/kasboek` paths and survives a reboot |
-| v2 | Seasonal hints, savings-account-linked pots, weekly check-in, FinTS fallback | — |
+| v2 | (seasonal hints done) Savings-account-linked pots, weekly check-in, FinTS fallback | — |
 | v3 | Local-LLM chat over your data | — |
 
 ---

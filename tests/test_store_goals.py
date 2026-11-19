@@ -163,3 +163,16 @@ def test_outlook_has_pot_plans_from_next_month_until_full(con, acc):
     assert [m["pots"] for m in out[:3]] == [-200.0, -100.0, 0.0]               # 500 - 200 (Nov) = 300 left
     page_ok = store.forecast(con, TODAY)["free"]["pots_due"] == 200.0
     assert page_ok
+
+
+def test_forecast_page_shows_last_years_big_month(client):
+    with db.db() as c:
+        a = store.create_account(c, "Joint", "rabobank")
+        today = date.today()
+        last_year_next = date(today.year - 1 + (today.month // 12), today.month % 12 + 1, 10)
+        data = f"Datum;Bedrag;Naam\n{last_year_next.strftime('%d-%m-%Y')};-640,00;Bol.com cadeaus\n".encode()
+        store.import_statement(c, parse_statement("x.csv", data), account_id=a)
+        tx = c.execute("SELECT id FROM transactions").fetchone()[0]
+        store.set_category(c, tx, "gifts")
+    page = client.get("/forecast").text
+    assert "Last year at this time" in page and "€ 640,00 on gifts" in page

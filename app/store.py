@@ -728,6 +728,7 @@ def forecast(con, today=None):
                                          monthly_set_aside=set_aside),
         "outlook": fc.outlook(today, streams, var["typical"] or 0.0, pots=_pot_outlook(con, today)),
         "sinking": fc.sinking_funds(streams),
+        "seasonal": _seasonal(con, today),
         "low_threshold": low_balance_threshold(con),
     }
 
@@ -1119,6 +1120,14 @@ def _pot_plans(con, today):
     due = goals.plans_due(pots, {p["id"]: p["moved_this_month"] for p in pots}, {p["id"]: p["status"] for p in pots})
     monthly = round(sum(p["monthly_plan"] for p in pots if not p["auto"] and not p["status"]["done"]), 2)
     return due, monthly
+
+
+def _seasonal(con, today):
+    labels = {r["key"]: r["label"] for r in con.execute("SELECT key, label FROM categories")}
+    hints = fc.seasonal_hints(analytics_rows(con), today)
+    for h in hints:
+        h["label"] = labels.get(h["category"], h["category"])
+    return hints
 
 
 def _pot_outlook(con, today):

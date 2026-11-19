@@ -42,6 +42,22 @@
   </table>
 </div>
 
+<div class="card">
+  <h2>Last year at this time</h2>
+  {% if fc.seasonal %}
+  <p class="small muted">Months coming up in which you spent much more than usual on something last year
+    (more than 1,5 times a usual month and over € 100). Not in the table above, which only knows regular payments.</p>
+  <ul class="catlist">
+    {% for h in fc.seasonal %}
+    <li><span><strong>{{ month_name(h.month ~ '-01') }}</strong>: last year you spent {{ h.last_year|eur }} on {{ h.label|lower }}</span>
+      <span class="num muted small">usually {{ h.usual|eur }} a month</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Nothing stands out in the coming months compared with last year{{ ' yet: this needs at least a year of history' if not fc.variable.full_months }}.</p>
+  {% endif %}
+</div>
+
 <div class="card table-wrap">
   <h2>Set aside for irregular bills</h2>
   {% if fc.sinking["items"] %}
