@@ -726,7 +726,7 @@ def forecast(con, today=None):
         "free": fc.free_to_spend(today, bal["total"], streams, pots_due=pots_due),
         "projection": fc.project_balance(today, bal["total"], streams, daily, due_now=pots_due,
                                          monthly_set_aside=set_aside),
-        "outlook": fc.outlook(today, streams, var["typical"] or 0.0),
+        "outlook": fc.outlook(today, streams, var["typical"] or 0.0, pots=_pot_outlook(con, today)),
         "sinking": fc.sinking_funds(streams),
         "low_threshold": low_balance_threshold(con),
     }
@@ -1119,6 +1119,18 @@ def _pot_plans(con, today):
     due = goals.plans_due(pots, {p["id"]: p["moved_this_month"] for p in pots}, {p["id"]: p["status"] for p in pots})
     monthly = round(sum(p["monthly_plan"] for p in pots if not p["auto"] and not p["status"]["done"]), 2)
     return due, monthly
+
+
+def _pot_outlook(con, today):
+    """[(monthly plan, still to save)] per pot from next month on: this month's unbooked plan counts as set aside
+    already (free to spend keeps it). Standing-order pots are in Recurring, so not here."""
+    out = []
+    for p in _pots(con, today):
+        if p["auto"] or p["status"]["done"] or not p["monthly_plan"]:
+            continue
+        this_month = max(0.0, p["monthly_plan"] - p["moved_this_month"])
+        out.append((p["monthly_plan"], max(0.0, p["status"]["left"] - this_month)))
+    return out
 
 
 def _first_date(con):

@@ -27,12 +27,16 @@
     {{ fc.variable.full_months }} full {{ 'month' if fc.variable.full_months == 1 else 'months' }}). Income and bills come from the
     <a href="/recurring">recurring payments</a>; one-off income such as tax refunds isn't counted.</p>
   {% endif %}
+  <p class="small muted">Pots are the monthly plans of your <a href="/goals#pots">savings pots</a> until each one is full;
+    pots filled by a standing order are already in Savings &amp; moves.</p>
   <table>
     <tr><th>Month</th><th class="num">Income</th><th class="num">Fixed costs</th><th class="num">Savings &amp; moves</th>
-      <th class="num">Day-to-day</th><th class="num">Left over</th></tr>
+      <th class="num">Day-to-day</th>{% if fc.outlook|selectattr('pots')|list %}<th class="num">Pots</th>{% endif %}<th class="num">Left over</th></tr>
+    {% set show_pots = fc.outlook|selectattr('pots')|list %}
     {% for m in fc.outlook %}
     <tr><td>{{ m.month }}</td><td class="num">{{ m.income|eur }}</td><td class="num neg">{{ m.fixed|eur }}</td>
       <td class="num">{{ m.savings|eur }}</td><td class="num neg">{{ m.variable|eur }}</td>
+      {% if show_pots %}<td class="num">{{ m.pots|eur }}</td>{% endif %}
       <td class="num {{ 'neg' if m.net < 0 }}"><strong>{{ m.net|eur }}</strong></td></tr>
     {% endfor %}
   </table>

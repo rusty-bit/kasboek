@@ -111,3 +111,10 @@ def test_future_window_does_not_count_the_previous_months_payment_as_late():
     rent = stream("out:rent", "Rent", average=-1350.0, next_date="2026-12-28")
     months = fc.outlook(TODAY, [rent], monthly_variable=0, months=2)
     assert [m["fixed"] for m in months] == [-1350.0, -1350.0]
+
+
+def test_outlook_sets_pot_plans_aside_until_each_pot_is_full():
+    months = fc.outlook(TODAY, [], monthly_variable=0.0, months=4, pots=[(200.0, 450.0), (100.0, 1000.0)])
+    assert [m["pots"] for m in months] == [-300.0, -300.0, -150.0, -100.0]
+    assert months[0]["net"] == -300.0
+    assert fc.outlook(TODAY, [], 0.0, months=1)[0]["pots"] == 0.0

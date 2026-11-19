@@ -120,9 +120,11 @@ def project_balance(today, balance, streams, daily_variable, days=90, due_now=0.
     return {"series": series, "lowest": low, "lowest_date": low_d, "end": series[-1][1]}
 
 
-def outlook(today, streams, monthly_variable, months=12):
+def outlook(today, streams, monthly_variable, months=12, pots=()):
     """The next `months` calendar months: regular income, fixed costs (yearly and quarterly bills in the
-    month they land), savings and moves out, typical variable spending, and what's left."""
+    month they land), savings and moves out, typical variable spending, pot plans, and what's left.
+    pots: [(monthly plan, still to save)]; a pot's plan stops once it is full."""
+    left = [[float(plan), float(rest)] for plan, rest in pots]
     out = []
     start = month_end(today) + timedelta(days=1)
     for _ in range(months):
@@ -137,7 +139,13 @@ def outlook(today, streams, monthly_variable, months=12):
                 row[col] += n * s["average"]
         row = {k: round(v, 2) if isinstance(v, float) else v for k, v in row.items()}
         row["variable"] = -round(monthly_variable or 0.0, 2)
-        row["net"] = round(row["income"] + row["fixed"] + row["savings"] + row["variable"], 2)
+        put = 0.0
+        for p in left:
+            step_ = min(p[0], max(0.0, p[1]))
+            p[1] -= step_
+            put += step_
+        row["pots"] = -round(put, 2)
+        row["net"] = round(row["income"] + row["fixed"] + row["savings"] + row["variable"] + row["pots"], 2)
         out.append(row)
         start = end + timedelta(days=1)
     return out

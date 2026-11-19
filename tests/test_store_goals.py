@@ -153,3 +153,13 @@ def test_overview_shows_pots_budgets_and_the_pot_amount_in_free_to_spend(client)
     page = client.get("/").text
     assert "Savings pots" in page and "Holiday" in page and "Budgets this month" in page
     assert "pot plans still to set aside" in page
+
+
+def test_outlook_has_pot_plans_from_next_month_until_full(con, acc):
+    store.refresh_recurring(con, TODAY)
+    store.add_pot(con, "Holiday", target="500", monthly_plan="200")             # 200 still due in November
+    store.add_pot(con, "Savings", target="5000", monthly_plan="100", auto=True)
+    out = store.forecast(con, TODAY)["outlook"]
+    assert [m["pots"] for m in out[:3]] == [-200.0, -100.0, 0.0]               # 500 - 200 (Nov) = 300 left
+    page_ok = store.forecast(con, TODAY)["free"]["pots_due"] == 200.0
+    assert page_ok
