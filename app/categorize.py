@@ -5,6 +5,7 @@ id, counterparty, description, amount, counterparty_iban, category (key), cat_so
 """
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Optional
 
 # --- normalising ----------------------------------------------------------------------------------
@@ -26,12 +27,15 @@ PROCESSORS = ("paypal", "mollie", "adyen", "stripe", "klarna", "buckaroo", "mult
               "ingenico", "online payments", "ppro payment", "mangopay", "ideal")
 
 
+# Both are pure and run for every rule x row on each save; the same names repeat, so cache them.
+@lru_cache(maxsize=65536)
 def norm_text(s):
     """Lowercase words for matching: apostrophes dropped, other punctuation -> space."""
     s = (s or "").lower().replace("'", "").replace("’", "")
     return re.sub(r"\s+", " ", re.sub(r"[^\w]+", " ", s)).strip()
 
 
+@lru_cache(maxsize=65536)
 def normalize_merchant(name):
     """Stable merchant key for memory: 'BEA, Betaalautomaat ALBERT HEIJN 1234' -> 'albert heijn'."""
     s = (name or "").strip()

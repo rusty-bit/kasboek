@@ -260,3 +260,17 @@ def test_paired_wallet_payment_is_a_transfer():
            "counterparty_iban": "", "description": "1048964254564 uw aankoop bij ..........", "mcc": None}
     assert categorize(row, set(), [], {}, wallet_paid={1}) == ("transfer", "transfer")
     assert categorize(row, set(), [], {})[1] != "transfer"
+
+
+def test_rules_over_a_few_thousand_rows_stay_fast():
+    """Saving a category or a rule reruns every rule over every row; that must stay well under a second
+    (it took about 5 s on 3.8k real rows with 17 rules)."""
+    import time
+    rows = [{"id": i, "amount": -12.5 - i % 50, "counterparty": f"BEA, Betaalautomaat SHOP {i % 400} 12{i:04d}",
+             "description": f"Pas 123 SHOP {i % 400} MAASTRICHT NLD 2026-10-29T18:02:11 nr {i}",
+             "counterparty_iban": "", "category": None, "cat_source": "default", "date": "2026-10-01"}
+            for i in range(4000)]
+    rules = [Rule(id=n, match_text=f"shop {n * 7}", category="groceries") for n in range(20)]
+    start = time.perf_counter()
+    categorize_all(rows, own_ibans=set(), rules=rules, memory={})
+    assert time.perf_counter() - start < 1.0
