@@ -230,3 +230,14 @@ def test_brokers_and_crypto_are_investments_both_ways():
 
 def test_dividends_are_income():
     assert categorize(tx(cp="", desc="Dividende Ertragsgutschrift", amount=12.5), **CTX) == ("other_income", "keyword")
+
+
+def test_shared_ibans_are_payment_providers():
+    from app.categorize import shared_ibans
+    rows = [{"counterparty": "Agradi b.v.", "description": "", "counterparty_iban": "NL00RABO0000000099", "amount": -27},
+            {"counterparty": "Verfwebwinkel BV", "description": "", "counterparty_iban": "NL00RABO0000000099", "amount": -9},
+            {"counterparty": "Albert Heijn 1234", "description": "", "counterparty_iban": "NL11INGB0000000001", "amount": -5},
+            {"counterparty": "Albert Heijn 5678", "description": "", "counterparty_iban": "NL11INGB0000000001", "amount": -7}]
+    rows += [{"counterparty": n, "description": "", "counterparty_iban": "NL00KNAB0000000077", "amount": -1}
+             for n in ("D. E. Vos", "Dee Vos", "DEE VOS", "D", "DE Vos")]      # one person, many spellings
+    assert shared_ibans(rows) == {"NL00RABO0000000099"}

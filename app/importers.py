@@ -200,9 +200,10 @@ def _parse_table(text: str, section=""):
             amt = parse_amount(get("amount"))
             sign = get("sign").lower()
             if amt is not None and sign:
-                if sign in ("af", "d", "debet", "debit", "s", "soll"):
+                # Knab writes Afschrijvingen / Bijschrijvingen; others af/bij, D/C, Debet/Credit, S/H
+                if sign in ("af", "d", "debet", "debit", "s", "soll") or sign.startswith("afschrijving"):
                     amt = -abs(amt)
-                elif sign in ("bij", "c", "credit", "h", "haben"):
+                elif sign in ("bij", "c", "credit", "h", "haben") or sign.startswith("bijschrijving"):
                     amt = abs(amt)
         else:
             deb, cre = parse_amount(get("debit")), parse_amount(get("credit"))

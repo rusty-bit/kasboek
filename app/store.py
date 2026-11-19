@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date
 
 from app.categorize import (Rule, categorize_all, direction, memory_keys, merchant_text, norm_text,
-                            normalize_merchant, rule_matches, suggest_rule_text)
+                            normalize_merchant, rule_matches, shared_ibans, suggest_rule_text)
 from app import db as dbm
 from app import forecast as fc
 from app import recurring as rc
@@ -196,8 +196,11 @@ def _context(con):
     rules_ = [Rule(id=r["id"], match_text=r["match_text"], category=r["category_key"], field=r["field"],
                    direction=r["direction"], amount_min=r["amount_min"], amount_max=r["amount_max"])
               for r in rules(con, with_hits=False)]
+    shared = shared_ibans([dict(r) for r in con.execute(
+        "SELECT counterparty, description, counterparty_iban, amount FROM transactions WHERE counterparty_iban != ''")])
     memory = {(r["norm"], r["direction"]): r["key"] for r in con.execute(
-        "SELECT m.norm, m.direction, c.key FROM merchant_memory m JOIN categories c ON c.id = m.category_id")}
+        "SELECT m.norm, m.direction, c.key FROM merchant_memory m JOIN categories c ON c.id = m.category_id")
+        if not (r["norm"].startswith("iban:") and r["norm"][5:] in shared)}
     llm = {(r["norm"], r["direction"]): r["key"] for r in con.execute(
         "SELECT g.norm, g.direction, c.key FROM llm_guesses g JOIN categories c ON c.id = g.category_id")}
     return dict(own_ibans=own, rules=rules_, memory=memory, llm=llm)

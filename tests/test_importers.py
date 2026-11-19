@@ -145,3 +145,14 @@ def test_crossmatch_counts_duplicates_and_prefers_same_iban():
     old = [{"id": 5, "date": "2026-11-17", "amount": -40.0, "counterparty_iban": "NL00INGB0000000001"},
            {"id": 6, "date": "2026-11-18", "amount": -40.0, "counterparty_iban": "NL00INGB0000000002"}]
     assert crossmatch(new, old) == {0: 6}
+
+
+def test_knab_real_export_writes_afschrijvingen_and_bijschrijvingen():
+    data = ("Rekeningnummer;Transactiedatum;Valutacode;CreditDebet;Bedrag;Tegenrekeningnummer;Tegenrekeninghouder;"
+            "Valutadatum;Betaalwijze;Omschrijving;Type betaling;Machtigingsnummer;Incassant ID;Referentie;Boekdatum\r\n"
+            "NL00KNAB0123456789;03-10-2026;EUR;Afschrijvingen;12,99;NL00ABNA0000000003;Netflix International B.V.;"
+            "03-10-2026;Incasso;Netflix;;M1;NL00ZZZ;REF-1;03-10-2026\r\n"
+            "NL00KNAB0123456789;04-10-2026;EUR;Bijschrijvingen;250,00;NL00RABO0000000004;J. Jansen;"
+            "04-10-2026;Overboeking;Terug;;;;REF-2;04-10-2026\r\n").encode()
+    rows = parse_statement("Knab Transactieoverzicht.csv", data)["rows"]
+    assert [r["amount"] for r in rows] == [-12.99, 250.0]

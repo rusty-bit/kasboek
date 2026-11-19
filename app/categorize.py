@@ -234,6 +234,37 @@ def memory_keys(t):
     return keys
 
 
+NAME_STOPWORDS = {"bv", "b v", "nv", "gmbh", "ltd", "the", "van", "der", "den", "het", "und", "and", "via",
+                  "shop", "store", "online", "webshop", "com", "www"}
+
+
+def _name_words(t):
+    return {w for w in normalize_merchant(merchant_text(t)).split() if len(w) >= 3 and w not in NAME_STOPWORDS}
+
+
+def shared_ibans(rows):
+    """IBANs that receive money for unrelated names: a payment provider's collection account (Pay.nl, CCV,
+    ...), even when the bank text no longer says 'via ...'. Names that share a word ('J. Smit',
+    'Jolanda Smit') are one payee written differently, so they don't count. Learning a category from a
+    shared IBAN would spread one shop's category to all the others, so these are never used as memory."""
+    names = {}
+    for t in rows:
+        iban = (t.get("counterparty_iban") or "").replace(" ", "").upper()
+        words = _name_words(t)
+        if iban and words:
+            names.setdefault(iban, set()).add(frozenset(words))
+    shared = set()
+    for iban, groups in names.items():
+        clusters = []                       # merge names that share a word
+        for g in groups:
+            joined = [c for c in clusters if c & g]
+            merged = set(g).union(*joined)
+            clusters = [c for c in clusters if not (c & g)] + [merged]
+        if len(clusters) > 1:
+            shared.add(iban)
+    return shared
+
+
 def chains(memory):
     """{(brand, direction): category} for chains whose taught branches all agree."""
     seen = {}

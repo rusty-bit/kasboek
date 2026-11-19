@@ -209,3 +209,22 @@ def test_relearn_backfills_iban_memory_from_hand_set_rows(con):
     assert store.relearn(con) == 1
     assert cat_of(con, "Jolanda") == ("kids", "iban")
     assert store.relearn(con) == 0     # idempotent
+
+
+KNAB_HEAD = ("Rekeningnummer;Transactiedatum;Valutacode;CreditDebet;Bedrag;Tegenrekeningnummer;Tegenrekeninghouder;"
+             "Valutadatum;Betaalwijze;Omschrijving;Type betaling;Machtigingsnummer;Incassant ID;Referentie;Boekdatum\r\n")
+
+
+def knab_line(day, amount, iban, name, ref):
+    return (f"NL00KNAB0123456789;{day}-10-2026;EUR;Afschrijvingen;{amount};{iban};{name};{day}-10-2026;iDEAL;"
+            f"Order;;;;{ref};{day}-10-2026\r\n")
+
+
+def test_payment_provider_iban_shared_by_shops_is_not_learned(con):
+    pay = "NL00RABO0000000099"
+    data = (KNAB_HEAD + knab_line("01", "27,24", pay, "Agradi b.v.", "R1")
+            + knab_line("02", "128,86", pay, "Verfwebwinkel BV", "R2")).encode()
+    imp(con, "knab.csv", data=data, filename="Knab Transactieoverzicht.csv")
+    tid = con.execute("SELECT id FROM transactions WHERE counterparty='Agradi b.v.'").fetchone()["id"]
+    store.set_category(con, tid, "animals")
+    assert cat_of(con, "Verfwebwinkel")[0] != "animals"
