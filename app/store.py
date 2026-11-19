@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date
 
 from app.categorize import (Rule, categorize_all, direction, memory_keys, merchant_text, norm_text,
-                            normalize_merchant, rule_matches, shared_ibans, suggest_rule_text, WALLETS)
+                            normalize_merchant, rule_matches, shared_ibans, suggest_rule_text, wallet_pairs, WALLETS)
 from app import db as dbm
 from app import forecast as fc
 from app import recurring as rc
@@ -203,12 +203,23 @@ def _context(con):
         if not (r["norm"].startswith("iban:") and r["norm"][5:] in shared)}
     llm = {(r["norm"], r["direction"]): r["key"] for r in con.execute(
         "SELECT g.norm, g.direction, c.key FROM llm_guesses g JOIN categories c ON c.id = g.category_id")}
-    wallets = {}
-    for r in con.execute("SELECT id, bank FROM accounts"):
-        name = (r["bank"] or "").lower()
-        if name in WALLETS:
-            wallets.setdefault(name, r["id"])
-    return dict(own_ibans=own, rules=rules_, memory=memory, llm=llm, own_wallets=wallets)
+    return dict(own_ibans=own, rules=rules_, memory=memory, llm=llm, wallet_paid=set(wallet_links(con)))
+
+
+def wallet_links(con):
+    """{bank row id: wallet row id} for bank payments to a connected wallet (PayPal) with the same booking
+    in that wallet. See categorize.wallet_pairs."""
+    out = {}
+    for w in con.execute("SELECT id, bank FROM accounts WHERE lower(bank) IN (%s)" % ",".join("?" * len(WALLETS)),
+                         WALLETS).fetchall():
+        name = w["bank"].lower()
+        wallet = [dict(r) for r in con.execute("SELECT id, date, amount FROM transactions WHERE account_id=?",
+                                               (w["id"],))]
+        bank = [dict(r) for r in con.execute("SELECT id, date, amount, counterparty FROM transactions"
+                                             " WHERE account_id != ? AND lower(counterparty) LIKE ?",
+                                             (w["id"], name + "%"))]
+        out.update(wallet_pairs(bank, wallet, name))
+    return out
 
 
 def recategorize(con):

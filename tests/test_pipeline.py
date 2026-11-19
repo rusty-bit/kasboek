@@ -230,12 +230,17 @@ def test_payment_provider_iban_shared_by_shops_is_not_learned(con):
     assert cat_of(con, "Verfwebwinkel")[0] != "animals"
 
 
-def test_connecting_paypal_turns_bank_payments_to_paypal_into_transfers(con):
+def test_connecting_paypal_turns_matching_bank_payments_into_transfers(con):
     acc = store.create_account(con, name="Test", bank="")
     csv = ("Datum;Bedrag;Naam;Omschrijving\n"
-           "18-03-2026;-2895,54;PayPal Europe S.a.r.l. et Cie S.C.A;1048964254564 uw aankoop bij ......\n").encode()
+           "18-03-2026;-2895,54;PayPal Europe S.a.r.l. et Cie S.C.A;1048964254564 uw aankoop bij ......\n"
+           "29-10-2025;-1594,46;PayPal Europe S.a.r.l. et Cie S.C.A;1045785505502 uw aankoop bij HUIFANG SHI\n"
+           ).encode()
     imp(con, "s.csv", data=csv, account_id=acc)
-    assert cat_of(con, "PayPal")[1] != "transfer"
-    store.create_account(con, name="PayPal", bank="paypal")
+    assert cat_of(con, "1048964254564")[1] != "transfer"
+    pp = store.create_account(con, name="PayPal", bank="paypal")
+    store.insert_rows(con, pp, [{"date": "2026-03-17", "amount": -2895.54, "counterparty": "Solar shop",
+                                 "counterparty_iban": "", "description": "", "ref": "eb:1"}], "enablebanking")
     store.recategorize(con)
-    assert cat_of(con, "PayPal") == ("transfer", "transfer")
+    assert cat_of(con, "1048964254564") == ("transfer", "transfer")
+    assert cat_of(con, "HUIFANG")[1] != "transfer"           # no PayPal row (foreign currency): still spending

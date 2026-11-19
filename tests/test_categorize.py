@@ -243,13 +243,20 @@ def test_shared_ibans_are_payment_providers():
     assert shared_ibans(rows) == {"NL00RABO0000000099"}
 
 
-def test_payments_to_a_connected_wallet_are_transfers():
+def test_wallet_pairs_match_bank_payments_to_wallet_purchases():
+    from app.categorize import wallet_pairs
+    bank = [{"id": 1, "date": "2026-03-18", "amount": -2895.54, "counterparty": "PayPal Europe S.a.r.l. et Cie S.C.A"},
+            {"id": 2, "date": "2025-10-29", "amount": -1594.46, "counterparty": "PayPal Europe S.a.r.l."},   # USD: no EUR row
+            {"id": 3, "date": "2026-03-18", "amount": -2895.54, "counterparty": "Bol.com"},                  # not PayPal
+            {"id": 4, "date": "2026-04-01", "amount": 20.0, "counterparty": "PayPal Europe"}]                # refund
+    wallet = [{"id": 10, "date": "2026-03-17", "amount": -2895.54, "counterparty": "Solar shop"},
+              {"id": 11, "date": "2026-03-30", "amount": 20.0, "counterparty": "eBay"}]
+    assert wallet_pairs(bank, wallet, "paypal") == {1: 10, 4: 11}
+
+
+def test_paired_wallet_payment_is_a_transfer():
     from app.categorize import categorize
-    bank_row = {"id": 1, "account_id": 3, "amount": -2895.54, "counterparty": "PayPal Europe S.a.r.l. et Cie S.C.A",
-                "counterparty_iban": "", "description": "1048964254564 uw aankoop bij ..........", "mcc": None}
-    assert categorize(bank_row, set(), [], {}, own_wallets={"paypal": 9}) == ("transfer", "transfer")
-    assert categorize(bank_row, set(), [], {})[1] != "transfer"                    # no PayPal account: spending
-    in_wallet = {**bank_row, "account_id": 9, "counterparty": "PayPal", "description": "Purchase"}
-    assert categorize(in_wallet, set(), [], {}, own_wallets={"paypal": 9})[1] != "transfer"
-    shop_via = {**bank_row, "counterparty": "Bol.com", "description": "betaald via paypal"}
-    assert categorize(shop_via, set(), [], {}, own_wallets={"paypal": 9})[1] != "transfer"
+    row = {"id": 1, "account_id": 3, "amount": -2895.54, "counterparty": "PayPal Europe S.a.r.l. et Cie S.C.A",
+           "counterparty_iban": "", "description": "1048964254564 uw aankoop bij ..........", "mcc": None}
+    assert categorize(row, set(), [], {}, wallet_paid={1}) == ("transfer", "transfer")
+    assert categorize(row, set(), [], {})[1] != "transfer"
