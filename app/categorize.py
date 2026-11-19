@@ -71,7 +71,7 @@ KEYWORDS = [
     # investments: dividends/coupons are income, buying and selling is moving your own money
     (r"dividende|dividend|ausschuettung|ausschüttung|ertragsgutschrift|kupon", "other_income", "in", A),
     (r"wertpapier\w*|wpknr|isin|sparplan|trade republic|degiro|scalable capital|flatex|smartbroker|"
-     r"meesman|brand new day|peaks|bux|saxo bank|justtrade|bitvavo|coinbase|kraken|binance|bitpanda",
+     r"meesman|brand new day|peaks|bux|saxo bank|justtrade|interactive brokers|bitvavo|coinbase|kraken|binance|bitpanda",
      "investment", None, A),
     # income (direction-specific)
     (r"salaris|gehalt|loon|lohn|bezuege", "salary", "in", A),

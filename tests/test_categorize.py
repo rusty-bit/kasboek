@@ -221,7 +221,7 @@ def test_clothing_shops():
 # --- investments -----------------------------------------------------------------------------------
 def test_brokers_and_crypto_are_investments_both_ways():
     for name in ["Trade Republic Bank GmbH", "DEGIRO", "Scalable Capital GmbH", "flatex Bank AG", "Meesman Indexbeleggen",
-                 "Brand New Day", "Bitvavo B.V.", "Coinbase Europe", "Smartbroker"]:
+                 "Brand New Day", "Bitvavo B.V.", "Coinbase Europe", "Smartbroker", "Interactive Brokers Ireland Limited"]:
         assert categorize(tx(cp=name, amount=-100), **CTX)[0] == "investment", name
     assert categorize(tx(cp="DEGIRO", amount=250), **CTX)[0] == "investment"            # selling
     assert categorize(tx(cp="", desc="WERTPAPIERE", amount=-250), **CTX)[0] == "investment"
