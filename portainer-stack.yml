@@ -1,6 +1,6 @@
 # Portainer stack for the NAS. The image is built once over SSH (see README "Deploy on the NAS"):
-#   cd /volume1/Docker/kasboek/src && docker build -t kasboek:0.2.0 .
-# Bind mounts MUST be absolute paths under /volume1/Docker/kasboek: a relative path lands on the 1.8 GB rootfs.
+#   cd /volume2/Docker/kasboek/src && docker build -t kasboek:0.2.0 .
+# Bind mounts MUST be absolute paths under /volume2/Docker/kasboek: a relative path lands on the 1.8 GB rootfs.
 services:
   kasboek:
     image: kasboek:0.2.0
@@ -12,7 +12,7 @@ services:
       KASBOEK_USER: ${KASBOEK_USER:-kasboek}
       KASBOEK_PASSWORD: ${KASBOEK_PASSWORD}
     volumes:
-      - /volume1/Docker/kasboek/data:/data
+      - /volume2/Docker/kasboek/data:/data
     ports:
       - "8420:8000"
     mem_limit: 256m

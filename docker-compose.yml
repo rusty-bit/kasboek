@@ -1,7 +1,7 @@
 # Kasboek on the NAS, deployed as a Portainer stack.
-# All bind mounts MUST be absolute paths under /volume1/Docker/kasboek. A relative path lands on the
+# All bind mounts MUST be absolute paths under /volume2/Docker/kasboek. A relative path lands on the
 # 1.8 GB rootfs and can take the NAS down. Create the folder first:
-#   mkdir -p /volume1/Docker/kasboek/data && chown 1000:1000 /volume1/Docker/kasboek/data
+#   mkdir -p /volume2/Docker/kasboek/data && chown 1000:1000 /volume2/Docker/kasboek/data
 services:
   kasboek:
     build: .
@@ -13,7 +13,7 @@ services:
       DATA_DIR: /data
       TZ: Europe/Amsterdam
     volumes:
-      - /volume1/Docker/kasboek/data:/data
+      - /volume2/Docker/kasboek/data:/data
     ports:
       - "8420:8000"
     mem_limit: 256m
