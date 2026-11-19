@@ -230,7 +230,7 @@ Does each person carry their part of the household costs? Two people (names in s
 1. **Login:** one shared household login. Accounts still carry `owner` for filtering.
 2. **Host:** the NAS. The AI box is only the optional LLM endpoint.
 3. **Enable Banking redirect:** HTTPS via Nginx Proxy Manager. The paste-URL box can stay as a fallback.
-4. **side-business stays out of the household totals.** Its accounts get owner `side-business` and are excluded from totals, and the `business` / `side_income` categories don't count toward household free-to-spend.
+4. **A side business stays out of the household totals.** Its accounts get owner `side-business` and are excluded from totals, and the `business` / `side_income` categories don't count toward household free-to-spend.
 5. **History:** 5 years where possible. Files give that: the real Rabobank export goes back to 2021-07. comdirect caps a file at ~500 bookings per account, so older periods need extra exports. Enable Banking only back-fills what the bank allows (90 days to 2 years).
 
 ## 10. Alternative worth knowing about

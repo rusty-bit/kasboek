@@ -9,7 +9,7 @@ Self-hosted family finance app. Full spec: `docs/SPEC.md` (read it first). Plan:
 
 ## Hard rules
 - **Bank data never leaves the machine.** No cloud APIs other than Enable Banking (and only for fetching). No telemetry, no CDN assets: vendor HTMX into `app/static/`.
-- **Never commit real bank data, `.env`, `*.pem`, `*.db`.** Real exports live outside the repo (on Windows: `a folder outside the repo`). Tests use only the synthetic files in `samples/`.
+- **Never commit real bank data, `.env`, `*.pem`, `*.db`.** Real exports live in a folder outside the repo. Tests use only the synthetic files in `samples/`.
 - Read-only banking. Never add payment initiation.
 - Sign convention: `amount < 0` money out, `> 0` money in. EUR only.
 - A category set by hand (`cat_source='manual'`) is never overwritten by any automatic step.

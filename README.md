@@ -10,11 +10,14 @@ Local-first family finance app: bank sync (Rabobank, Knab, comdirect), auto-cate
 
 ## Get started (Docker)
 
+Download [`docker-compose.yml`](docker-compose.yml) into an empty folder and run:
+
 ```
-git clone https://github.com/rusty-bit/kasboek.git
-cd kasboek
-docker compose up -d --build
+docker compose up -d
 ```
+
+This pulls the ready-made image `ghcr.io/rusty-bit/kasboek` (amd64 and arm64). With Portainer, paste the same
+file as a stack.
 
 1. Open `http://<this machine>:8420` and sign in with username `kasboek` and password `kasboek`.
 2. Kasboek asks you to choose your own username and password right away. You can change them later through the
@@ -25,7 +28,8 @@ docker compose up -d --build
 
 Your data (database, bank key, daily backups) lives in the Docker volume `kasboek-data`. To use a folder instead,
 put `KASBOEK_DATA=/absolute/path` in a `.env` file next to `docker-compose.yml`. Other optional settings are in
-`stack.env.example`. Updating: `git pull && docker compose up -d --build`.
+`stack.env.example`. Updating: change the version in `docker-compose.yml`, then
+`docker compose pull && docker compose up -d`.
 
 Forgot the login? `docker exec kasboek python -m app.auth reset` sets it back to `kasboek` / `kasboek`.
 For use outside your home network, put Kasboek behind a reverse proxy with HTTPS.
@@ -56,19 +60,22 @@ Uses `./data` next to the repo. **Local only. Never use this file on the NAS.**
 
 Paths are absolute on purpose: a relative bind mount would land on the 1.8 GB rootfs.
 
-1. Copy the code to `kasboek/src` and the data (`kasboek.db`, plus the Enable Banking `.pem` unless you upload it on
-   the Banks page) to `kasboek/data` on the
-   `Docker` share (`/volume1/Docker` on the NAS, the same volume as Docker itself), with the local app **stopped**
-   (only one Kasboek may sync with the banks).
-2. Over SSH on the NAS, once:
-   `chown -R 1000:1000 /volume1/Docker/kasboek/data && cd /volume1/Docker/kasboek/src && docker build -t kasboek:0.4.0 .`
-3. Portainer: Stacks → Add stack → Web editor → paste `portainer-stack.yml`; deploy.
-   Sign in with `kasboek` / `kasboek` and choose your own login.
-4. Open `http://<NAS address>:8420`. For HTTPS, add a proxy host in Nginx Proxy Manager to `<NAS address>:8420`.
-   Then register `https://<that host>/banks/callback` as redirect URL in the Enable Banking control panel and on
-   the Banks page, so bank logins come straight back.
+1. The data (`kasboek.db`) lives in `/volume1/Docker/kasboek/data` on the `Docker` share (the same volume as
+   Docker itself), owned by uid 1000: `chown -R 1000:1000 /volume1/Docker/kasboek/data`. Only one Kasboek may sync
+   with the banks, so keep a local copy stopped.
+2. Portainer: Stacks → Add stack → Web editor → paste `portainer-stack.yml`; deploy. Portainer pulls the image.
+3. Open `http://<NAS address>:8420`, sign in with `kasboek` / `kasboek` and choose your own login.
+4. For HTTPS, add a proxy host in Nginx Proxy Manager to `<NAS address>:8420`. Then register
+   `https://<that host>/banks/callback` as redirect URL in the Enable Banking control panel and on the Banks page,
+   so bank logins come straight back.
 
-Updating: copy the new code to `src`, `docker build -t kasboek:<new tag> .`, change the tag in the stack, redeploy.
+Updating: change the version in the stack (Portainer → the stack → Editor) and click Update the stack.
 Backups: one copy of the database per day in `/volume1/Docker/kasboek/data/backups`, the newest 14 are kept.
 
 The app listens on port 8420 and the container is limited to 256 MB.
+
+## Releasing
+
+Bump the version in `docker-compose.yml` and `portainer-stack.yml`, commit, then tag:
+`git tag v0.4.1 && git push origin v0.4.1`. GitHub Actions runs the tests and publishes
+`ghcr.io/rusty-bit/kasboek:0.4.1` for amd64 and arm64.
